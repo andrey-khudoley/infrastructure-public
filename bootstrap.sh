@@ -78,6 +78,49 @@ run_with_retries() {
   done
 }
 
+# Кэш galaxy-download: в requirements перечислены все .tar.gz; не хватать хотя бы одного — нельзя считать кэш целым
+# (раньше проверялось лишь «есть ли какой-нибудь *.tar.gz», из-за чего при отсутствии одного архива ломалась установка).
+galaxy_cache_artifacts_complete() {
+  local dl_dir="$1"
+  python3 - "$dl_dir" <<'PY'
+import os, sys, yaml
+dl = sys.argv[1]
+req_path = os.path.join(dl, "requirements.yml")
+try:
+    with open(req_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+except OSError:
+    sys.exit(1)
+for c in data.get("collections") or []:
+    n = c.get("name")
+    if not n or not str(n).endswith(".tar.gz"):
+        continue
+    path = str(n) if os.path.isabs(str(n)) else os.path.join(dl, os.path.basename(str(n)))
+    if not os.path.isfile(path):
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# В сгенерированном Galaxy requirements имена — относительные .tar.gz; для install подставляем абсолютные пути (не зависит от CWD).
+galaxy_write_abs_requirements() {
+  local dl_dir="$1" out_file="$2"
+  python3 - "$dl_dir" "$out_file" <<'PY'
+import os, sys, yaml
+dl, out = sys.argv[1], sys.argv[2]
+with open(os.path.join(dl, "requirements.yml"), encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+for c in data.get("collections") or []:
+    n = c.get("name")
+    if not n or not str(n).endswith(".tar.gz"):
+        continue
+    if not os.path.isabs(str(n)):
+        c["name"] = os.path.join(dl, os.path.basename(str(n)))
+with open(out, "w", encoding="utf-8") as f:
+    yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+PY
+}
+
 has_cmd() { command -v "$1" &>/dev/null; }
 
 # Публичный HTTPS-клон без срабатывания credential.helper (иначе интерактивный запрос логина на GitHub).
@@ -795,9 +838,12 @@ install_galaxy_collections() {
   install -d -m 0755 "${dl_dir}"
 
   local use_cache=0
-  if [[ -f "${fp_file}" ]] && [[ -f "${cached_req}" ]] && [[ "$(cat "${fp_file}")" == "${cur_hash}" ]] \
-    && compgen -G "${dl_dir}/*.tar.gz" &>/dev/null; then
-    use_cache=1
+  if [[ -f "${fp_file}" ]] && [[ -f "${cached_req}" ]] && [[ "$(cat "${fp_file}")" == "${cur_hash}" ]]; then
+    if galaxy_cache_artifacts_complete "${dl_dir}"; then
+      use_cache=1
+    else
+      log_warn "Кэш ${dl_dir} неполный (нет части .tar.gz из requirements.yml), выполняется повторное скачивание."
+    fi
   fi
 
   if [[ "${use_cache}" -eq 1 ]]; then
@@ -811,9 +857,12 @@ install_galaxy_collections() {
     printf '%s' "${cur_hash}" > "${fp_file}"
   fi
 
-  # Пути в сгенерированном requirements.yml — относительные имена .tar.gz; ansible ищет их в CWD, не рядом с -r.
+  local abs_req
+  abs_req=$(mktemp "${TMPDIR:-/tmp}/galaxy-req-abs.XXXXXX.yml")
+  galaxy_write_abs_requirements "${dl_dir}" "${abs_req}"
   run_with_retries "Установка коллекций (galaxy collection install)" \
-    bash -ec "cd \"${dl_dir}\" && ansible-galaxy collection install -r requirements.yml --force --offline"
+    ansible-galaxy collection install -r "${abs_req}" --force --offline
+  rm -f "${abs_req}"
 }
 
 run_stage1_ansible_pull() {
