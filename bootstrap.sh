@@ -25,8 +25,12 @@ REPO_URL="${REPO_URL:-https://git.example.com/infra.git}"
 REF_VALUE="${REF:-main}"                                   # ветка/тег/коммит
 PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"                # каталог ansible-pull
 SKIP_ANSIBLE="${SKIP_ANSIBLE:-0}"                          # 1 = не клонировать репо, не запускать Galaxy/ansible-pull
-# Таймаут скачивания коллекций с galaxy.ansible.com (сек). По умолчанию у ansible-galaxy — 60 с; на медленном канале часто не хватает.
+# Таймаут операций ansible-galaxy против galaxy.ansible.com (сек). По умолчанию у клиента — 60 с; на медленном канале часто не хватает.
 GALAXY_INSTALL_TIMEOUT="${GALAXY_INSTALL_TIMEOUT:-300}"
+# Каталог с tar.gz и сгенерированным requirements.yml (offline-установка при повторном запуске, если исходный requirements.yml не менялся).
+GALAXY_DOWNLOAD_DIR="${GALAXY_DOWNLOAD_DIR:-/var/lib/infra/galaxy-download}"
+GALAXY_INSTALL_RETRIES="${GALAXY_INSTALL_RETRIES:-5}"
+GALAXY_RETRY_SLEEP_SEC="${GALAXY_RETRY_SLEEP_SEC:-10}"
 
 # Приватный репозиторий по SSH (git@...): deploy key и пауза для копирования в GitHub/GitLab.
 INFRA_SSH_KEY="${INFRA_SSH_KEY:-/root/.ssh/id_ed25519_infra}"
@@ -53,6 +57,25 @@ section() { echo; echo "== $* =="; }
 fail() {
   log_err "$*"
   exit 1
+}
+
+# Повторы для сетевых шагов ansible-galaxy (таймауты и прочие временные сбои).
+run_with_retries() {
+  local desc="$1"
+  shift
+  local attempt=1
+  local max="${GALAXY_INSTALL_RETRIES}"
+  while [[ "${attempt}" -le "${max}" ]]; do
+    if "$@"; then
+      return 0
+    fi
+    log_warn "${desc}: попытка ${attempt}/${max} не удалась, повтор через ${GALAXY_RETRY_SLEEP_SEC} с."
+    if [[ "${attempt}" -eq "${max}" ]]; then
+      fail "${desc}: исчерпаны повторы (${max})."
+    fi
+    attempt=$((attempt + 1))
+    sleep "${GALAXY_RETRY_SLEEP_SEC}"
+  done
 }
 
 has_cmd() { command -v "$1" &>/dev/null; }
@@ -760,9 +783,36 @@ sync_repository() {
 
 install_galaxy_collections() {
   section "Ansible Galaxy"
-  [[ -f "${PULL_DIR}/requirements.yml" ]] || fail "Не найден ${PULL_DIR}/requirements.yml"
-  ansible-galaxy collection install -r "${PULL_DIR}/requirements.yml" --force \
-    --timeout "${GALAXY_INSTALL_TIMEOUT}"
+  local req_src="${PULL_DIR}/requirements.yml"
+  [[ -f "${req_src}" ]] || fail "Не найден ${req_src}"
+
+  local dl_dir="${GALAXY_DOWNLOAD_DIR}"
+  local fp_file="${dl_dir}/.requirements.sha256"
+  local cached_req="${dl_dir}/requirements.yml"
+  local cur_hash
+  cur_hash=$(sha256sum "${req_src}" | awk '{ print $1 }')
+
+  install -d -m 0755 "${dl_dir}"
+
+  local use_cache=0
+  if [[ -f "${fp_file}" ]] && [[ -f "${cached_req}" ]] && [[ "$(cat "${fp_file}")" == "${cur_hash}" ]] \
+    && compgen -G "${dl_dir}/*.tar.gz" &>/dev/null; then
+    use_cache=1
+  fi
+
+  if [[ "${use_cache}" -eq 1 ]]; then
+    log_info "Повторный запуск: установка коллекций из кэша ${dl_dir} (исходный requirements.yml не менялся)."
+  else
+    log_info "Скачивание коллекций в ${dl_dir} (ansible-galaxy collection download)…"
+    rm -rf "${dl_dir}"
+    install -d -m 0755 "${dl_dir}"
+    run_with_retries "Скачивание коллекций (galaxy collection download)" \
+      ansible-galaxy collection download -r "${req_src}" -p "${dl_dir}" --timeout "${GALAXY_INSTALL_TIMEOUT}"
+    printf '%s' "${cur_hash}" > "${fp_file}"
+  fi
+
+  run_with_retries "Установка коллекций (galaxy collection install)" \
+    ansible-galaxy collection install -r "${cached_req}" --force --offline
 }
 
 run_stage1_ansible_pull() {
