@@ -811,8 +811,9 @@ install_galaxy_collections() {
     printf '%s' "${cur_hash}" > "${fp_file}"
   fi
 
+  # Пути в сгенерированном requirements.yml — относительные имена .tar.gz; ansible ищет их в CWD, не рядом с -r.
   run_with_retries "Установка коллекций (galaxy collection install)" \
-    ansible-galaxy collection install -r "${cached_req}" --force --offline
+    bash -ec "cd \"${dl_dir}\" && ansible-galaxy collection install -r requirements.yml --force --offline"
 }
 
 run_stage1_ansible_pull() {
