@@ -12,12 +12,15 @@ set -euo pipefail
 #
 # Приватный репозиторий по SSH (после первого запуска ключ сохраняется, повторный ввод не нужен):
 #   REPO_URL=git@github.com:org/infra.git bash bootstrap.sh
+#   curl -fsSL https://raw.githubusercontent.com/andrey-khudoley/infrastructure-public/refs/heads/main/bootstrap.sh | ENV=stage VAR_ALLOW_ROOT_DISK=1 REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash
+# (не используйте https://github.com/... для приватного репо — иначе git запросит логин; deploy-key работает только с git@ / ssh://)
 #
 # Один диск с LVM: /var и /minio из свободного места в VG (нужен явный разрешитель):
 #   VAR_ALLOW_ROOT_DISK=1 bash bootstrap.sh
 
 # -------------------------- Параметры запуска --------------------------
 ENV_VALUE="${ENV:-ctl}"                                    # ctl|stage|prod
+# Только git@... или ssh://... включают ensure_infra_deploy_key; https://... — обычный HTTPS (для private GitHub нужен token или смена URL на SSH).
 REPO_URL="${REPO_URL:-https://git.example.com/infra.git}"
 REF_VALUE="${REF:-main}"                                   # ветка/тег/коммит
 PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"                # каталог ansible-pull
@@ -737,6 +740,16 @@ sync_repository() {
   if [[ -d "${PULL_DIR}/.git" ]]; then
     (
       cd "${PULL_DIR}"
+      # Старый клон мог быть по https:// — тогда fetch снова спросит логин, даже если REPO_URL уже git@...
+      if git remote get-url origin &>/dev/null; then
+        prev=$(git remote get-url origin)
+        if [[ "${prev}" != "${REPO_URL}" ]]; then
+          log_warn "origin был ${prev}, выставляем ${REPO_URL} (как в REPO_URL)."
+        fi
+        git_repo remote set-url origin "${REPO_URL}"
+      else
+        git_repo remote add origin "${REPO_URL}"
+      fi
       git_repo fetch origin "${REF_VALUE}"
       git_repo checkout "${REF_VALUE}"
     )
