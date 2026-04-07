@@ -865,14 +865,42 @@ install_galaxy_collections() {
   rm -f "${abs_req}"
 }
 
+# Инвентарь для ansible-pull: явный файл, алиасы под встроенный --limit (см. ansible/cli/pull.py limit_opts),
+# иначе предупреждения про несовпадение hostname/FQDN и сбой при ANSIBLE_INVENTORY=localhost в окружении.
+prepare_ansible_pull_inventory() {
+  local base="${PULL_DIR}/inventory.ini"
+  local out="${PULL_DIR}/inventory.pull.ini"
+  local h_s h_f h
+
+  [[ -f "${base}" ]] || fail "Не найден ${base}. Нужен inventory.ini в репозитории (см. inventory.example.ini)."
+
+  h_s=$(hostname -s)
+  h_f=$(hostname -f)
+  h=$(hostname)
+
+  {
+    cat "${base}"
+    echo ""
+    echo "# Сгенерировано bootstrap.sh: имена для совпадения с --limit ansible-pull."
+    echo "[ctl_pull_aliases]"
+    printf '%s\n' "127.0.0.1" "${h_f}" "${h_s}" "${h}" | awk 'NF && !seen[$0]++' | while IFS= read -r name; do
+      echo "${name} ansible_connection=local"
+    done
+  } > "${out}"
+}
+
 run_stage1_ansible_pull() {
   section "Первый запуск stage1"
+  prepare_ansible_pull_inventory
   cd "${PULL_DIR}"
-  # Тот же credential.helper= для git внутри ansible-pull
+  # Тот же credential.helper= для git внутри ansible-pull.
+  # env -u ANSIBLE_INVENTORY: иначе значение «localhost» трактуется как путь к файлу и ломает инвентарь.
   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
+    env -u ANSIBLE_INVENTORY \
     /usr/bin/ansible-pull \
     -U "${REPO_URL}" -C "${REF_VALUE}" \
     --directory "${PULL_DIR}" \
+    -i "${PULL_DIR}/inventory.pull.ini" \
     bootstrap.yml --tags stage1 -e env="${ENV_VALUE}"
 }
 
