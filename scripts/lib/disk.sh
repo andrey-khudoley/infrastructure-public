@@ -1,218 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Bootstrap: подготовка ОС -> диск/разделы -> репозиторий -> ansible-pull stage1
-# После установки базовых пакетов и в конце (после stage1 и дисковых dnf) выполняется dnf distro-sync.
-#
-# Пример запуска:
-#   ENV=stage REF=v1.0 REPO_URL=https://git.example.com/infra.git bash bootstrap.sh
-#
-# Тестовый прогон (диски/swap/LVM и пакеты базы, без репозитория и ansible-pull):
-#   SKIP_ANSIBLE=1 bash bootstrap.sh
-#
-# Приватный репозиторий по SSH (после первого запуска ключ сохраняется, повторный ввод не нужен):
-#   REPO_URL=git@github.com:org/infra.git bash bootstrap.sh
-#   curl -fsSL https://raw.githubusercontent.com/andrey-khudoley/infrastructure-public/refs/heads/main/bootstrap.sh | ENV=stage VAR_ALLOW_ROOT_DISK=1 REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash
-# (не используйте https://github.com/... для приватного репо — иначе git запросит логин; deploy-key работает только с git@ / ssh://)
-#
-# Один диск с LVM: /var и /minio из свободного места в VG (нужен явный разрешитель):
-#   VAR_ALLOW_ROOT_DISK=1 bash bootstrap.sh
-
-# -------------------------- Параметры запуска --------------------------
-ENV_VALUE="${ENV:-ctl}"                                    # ctl|stage|prod
-# Только git@... или ssh://... включают ensure_infra_deploy_key; https://... — обычный HTTPS (для private GitHub нужен token или смена URL на SSH).
-REPO_URL="${REPO_URL:-https://git.example.com/infra.git}"
-REF_VALUE="${REF:-main}"                                   # ветка/тег/коммит
-PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"                # каталог ansible-pull
-SKIP_ANSIBLE="${SKIP_ANSIBLE:-0}"                          # 1 = не клонировать репо, не запускать Galaxy/ansible-pull
-# Таймаут операций ansible-galaxy против galaxy.ansible.com (сек). По умолчанию у клиента — 60 с; на медленном канале часто не хватает.
-GALAXY_INSTALL_TIMEOUT="${GALAXY_INSTALL_TIMEOUT:-300}"
-# Каталог с tar.gz и сгенерированным requirements.yml (offline-установка при повторном запуске, если исходный requirements.yml не менялся).
-GALAXY_DOWNLOAD_DIR="${GALAXY_DOWNLOAD_DIR:-/var/lib/infra/galaxy-download}"
-GALAXY_INSTALL_RETRIES="${GALAXY_INSTALL_RETRIES:-5}"
-GALAXY_RETRY_SLEEP_SEC="${GALAXY_RETRY_SLEEP_SEC:-10}"
-
-# Приватный репозиторий по SSH (git@...): deploy key и пауза для копирования в GitHub/GitLab.
-INFRA_SSH_KEY="${INFRA_SSH_KEY:-/root/.ssh/id_ed25519_infra}"
-INFRA_SSH_KEY_COMMENT="${INFRA_SSH_KEY_COMMENT:-infra@repo}"
-# 1 = не ждать Enter после вывода нового ключа (автоматизация).
-INFRA_SSH_SKIP_PROMPT="${INFRA_SSH_SKIP_PROMPT:-0}"
-
-# Диск с профилями параметров. Локальный файл приоритетнее, чем файл из repo.
-DISK_VARS_FILE="${DISK_VARS_FILE:-/etc/infra/bootstrap-disk.env}"
-DISK_VARS_REPO_PATH="${DISK_VARS_REPO_PATH:-bootstrap-disk.env}"
-# Если локального /etc/infra/bootstrap-disk.env нет — по умолчанию клонировать REPO_URL и взять профиль оттуда (одна команда без ручной копии).
-DISK_PROFILE_FETCH_FROM_REPO="${DISK_PROFILE_FETCH_FROM_REPO:-1}"
-
-# Ручной override основного диска (для расчета DISK_SIZE_GROUP).
-MAIN_DISK_DEVICE="${MAIN_DISK_DEVICE:-}"
-
-# -------------------------- Служебные функции --------------------------
-log_info() { echo "[+] $*"; }
-log_warn() { echo "[!] $*"; }
-log_err() { echo "[x] $*" >&2; }
-
-section() { echo; echo "== $* =="; }
-
-fail() {
-  log_err "$*"
-  exit 1
-}
-
-# Повторы для сетевых шагов ansible-galaxy (таймауты и прочие временные сбои).
-run_with_retries() {
-  local desc="$1"
-  shift
-  local attempt=1
-  local max="${GALAXY_INSTALL_RETRIES}"
-  while [[ "${attempt}" -le "${max}" ]]; do
-    if "$@"; then
-      return 0
-    fi
-    log_warn "${desc}: попытка ${attempt}/${max} не удалась, повтор через ${GALAXY_RETRY_SLEEP_SEC} с."
-    if [[ "${attempt}" -eq "${max}" ]]; then
-      fail "${desc}: исчерпаны повторы (${max})."
-    fi
-    attempt=$((attempt + 1))
-    sleep "${GALAXY_RETRY_SLEEP_SEC}"
-  done
-}
-
-# Кэш galaxy-download: в requirements перечислены все .tar.gz; не хватать хотя бы одного — нельзя считать кэш целым
-# (раньше проверялось лишь «есть ли какой-нибудь *.tar.gz», из-за чего при отсутствии одного архива ломалась установка).
-galaxy_cache_artifacts_complete() {
-  local dl_dir="$1"
-  python3 - "$dl_dir" <<'PY'
-import os, sys, yaml
-dl = sys.argv[1]
-req_path = os.path.join(dl, "requirements.yml")
-try:
-    with open(req_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-except OSError:
-    sys.exit(1)
-for c in data.get("collections") or []:
-    n = c.get("name")
-    if not n or not str(n).endswith(".tar.gz"):
-        continue
-    path = str(n) if os.path.isabs(str(n)) else os.path.join(dl, os.path.basename(str(n)))
-    if not os.path.isfile(path):
-        sys.exit(1)
-sys.exit(0)
-PY
-}
-
-# В сгенерированном Galaxy requirements имена — относительные .tar.gz; для install подставляем абсолютные пути (не зависит от CWD).
-galaxy_write_abs_requirements() {
-  local dl_dir="$1" out_file="$2"
-  python3 - "$dl_dir" "$out_file" <<'PY'
-import os, sys, yaml
-dl, out = sys.argv[1], sys.argv[2]
-with open(os.path.join(dl, "requirements.yml"), encoding="utf-8") as f:
-    data = yaml.safe_load(f) or {}
-for c in data.get("collections") or []:
-    n = c.get("name")
-    if not n or not str(n).endswith(".tar.gz"):
-        continue
-    if not os.path.isabs(str(n)):
-        c["name"] = os.path.join(dl, os.path.basename(str(n)))
-with open(out, "w", encoding="utf-8") as f:
-    yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
-PY
-}
-
-has_cmd() { command -v "$1" &>/dev/null; }
-
-# Публичный HTTPS-клон без срабатывания credential.helper (иначе интерактивный запрос логина на GitHub).
-git_repo() {
-  git -c credential.helper= "$@"
-}
-
-repo_url_is_ssh() {
-  [[ "${REPO_URL}" == git@* ]] || [[ "${REPO_URL}" == ssh://* ]]
-}
-
-# Для git@ / ssh://: при отсутствии ключа создаёт ed25519, печатает .pub и ждёт Enter; выставляет GIT_SSH_COMMAND.
-ensure_infra_deploy_key() {
-  repo_url_is_ssh || return 0
-
-  section "SSH-ключ для репозитория (deploy key)"
-  if ! has_cmd ssh-keygen; then
-    dnf_install openssh-clients
-  fi
-
-  install -d -m 0700 "$(dirname "${INFRA_SSH_KEY}")"
-
-  if [[ -f "${INFRA_SSH_KEY}" ]]; then
-    log_info "Ключ уже существует (${INFRA_SSH_KEY}), новый не создаём."
-  else
-    log_info "Создаём ключ: ${INFRA_SSH_KEY} (${INFRA_SSH_KEY_COMMENT})"
-    ssh-keygen -q -t ed25519 -N "" -C "${INFRA_SSH_KEY_COMMENT}" -f "${INFRA_SSH_KEY}"
-    chmod 600 "${INFRA_SSH_KEY}" 2>/dev/null || true
-    echo
-    log_info "Публичный ключ — добавьте его в Deploy keys (read-only) репозитория:"
-    echo
-    cat "${INFRA_SSH_KEY}.pub"
-    echo
-    if [[ "${INFRA_SSH_SKIP_PROMPT}" != "1" ]]; then
-      read -r -p "После добавления ключа нажмите Enter для продолжения… " _
-    fi
-  fi
-
-  export GIT_SSH_COMMAND="ssh -i \"${INFRA_SSH_KEY}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-}
-
-dnf_install() {
-  [[ "$#" -gt 0 ]] || return 0
-  dnf install -y "$@"
-}
-
-# Выравнивает все установленные пакеты с репозиториями (при необходимости и понижает версии),
-# в отличие от upgrade — снимает рассинхрон вроде openssl-libs vs openssh после подключения EPEL.
-distro_sync_system() {
-  section "Синхронизация с репозиториями (distro-sync)"
-  log_info "dnf distro-sync — полное выравнивание системы с доступными репозиториями."
-  dnf distro-sync -y
-}
-
-verify_sshd() {
-  local sshd_bin=""
-  if [[ -x /usr/sbin/sshd ]]; then
-    sshd_bin=/usr/sbin/sshd
-  elif has_cmd sshd; then
-    sshd_bin=$(command -v sshd)
-  else
-    fail "Не найден бинарник sshd (/usr/sbin/sshd), удалённая администрация недоступна."
-  fi
-
-  log_info "Проверка sshd (конфигурация и совместимость OpenSSL)…"
-  "${sshd_bin}" -t || fail "sshd -t не прошёл (в т.ч. возможный OpenSSL mismatch). Проверьте dnf/rpm."
-
-  if systemctl cat sshd.service &>/dev/null; then
-    systemctl enable sshd.service 2>/dev/null || true
-    systemctl start sshd.service 2>/dev/null || true
-    systemctl is-active --quiet sshd.service || fail "sshd.service не в состоянии active после запуска."
-  else
-    log_warn "Unit sshd.service не найден; проверка active пропущена (только sshd -t)."
-  fi
-}
-
-verify_network_stack_if_managed() {
-  # Только если NM явно включён — иначе на серверах с legacy network скриптами не мешаем.
-  if systemctl list-unit-files NetworkManager.service &>/dev/null; then
-    if systemctl is-enabled --quiet NetworkManager.service 2>/dev/null; then
-      log_info "Проверка NetworkManager (enabled)…"
-      systemctl is-active --quiet NetworkManager.service || fail "NetworkManager не active — сеть может быть недоступна."
-    fi
-  fi
-}
-
-verify_critical_services() {
-  section "Критичные сервисы"
-  verify_sshd
-  verify_network_stack_if_managed
-  log_info "Критичные проверки пройдены."
-}
+# shellcheck shell=bash
+# Диски, swap, LVM, /var, /minio. Требует scripts/lib/common.sh (log_*, dnf_install, has_cmd).
 
 append_fstab_once() {
   local line="$1"
@@ -270,7 +57,6 @@ detect_new_partition() {
 }
 
 get_last_free_segment_mib() {
-  # output: "<start_mib> <end_mib> <size_mib>" ; return 1 если не найдено
   local disk="$1"
   local free_line
   local start end size
@@ -317,18 +103,6 @@ grow_root_filesystem() {
   esac
 }
 
-# -------------------------- Проверки окружения --------------------------
-require_runtime() {
-  [[ "${EUID}" -eq 0 ]] || fail "Скрипт должен запускаться от root."
-  has_cmd dnf || fail "Не найден dnf. Скрипт рассчитан на dnf-совместимые дистрибутивы."
-
-  # Базовые системные утилиты, без них скрипт не имеет смысла.
-  for cmd in lsblk findmnt awk sed blkid mount umount; do
-    has_cmd "$cmd" || fail "Не найдена обязательная утилита: ${cmd}"
-  done
-}
-
-# -------------------------- Логика дисков --------------------------
 resolve_main_disk() {
   MAIN_DISK="${MAIN_DISK_DEVICE:-}"
   if [[ -z "$MAIN_DISK" ]]; then
@@ -533,7 +307,6 @@ select_target_disk_for_var() {
 }
 
 create_partition_from_free_tail() {
-  # usage: create_partition_from_free_tail <disk> <part_label> <need_mib_or_0_for_all>
   local disk="$1"
   local part_label="$2"
   local need_mib="$3"
@@ -571,10 +344,10 @@ create_partition_from_free_tail() {
   udevadm settle --timeout=10 2>/dev/null || sleep 3
 
   new_part=$(detect_new_partition "$disk" "$before_parts" || true)
-  if [[ -z "$new_part" ]]; then
+  if [[ -z "${new_part}" ]]; then
     new_part=$(lsblk -rpno NAME "$disk" 2>/dev/null | grep -v "^${disk}$" | tail -1 | tr -d ' ' || true)
   fi
-  [[ -n "$new_part" ]] || return 1
+  [[ -n "${new_part}" ]] || return 1
   echo "$new_part"
 }
 
@@ -614,14 +387,14 @@ setup_minio_partition() {
 
   minio_need_mib=$(( MINIO_SIZE_G * 1024 ))
   minio_part=$(create_partition_from_free_tail "$disk" "minio" "$minio_need_mib" || true)
-  if [[ -z "$minio_part" ]]; then
+  if [[ -z "${minio_part}" ]]; then
     log_warn "Не удалось выделить раздел для /minio (${MINIO_SIZE_G}G), пропускаем."
     return 0
   fi
 
   mkfs.xfs -f "$minio_part"
   minio_uuid=$(blkid -s UUID -o value "$minio_part" || true)
-  if [[ -z "$minio_uuid" ]]; then
+  if [[ -z "${minio_uuid}" ]]; then
     log_warn "Не удалось получить UUID для /minio, пропускаем."
     return 0
   fi
@@ -787,147 +560,3 @@ prepare_var_and_minio() {
   log_warn "Разметка /var и /minio не выполнена (см. сообщения выше)."
   return 0
 }
-
-# -------------------------- Репозиторий и ansible-pull --------------------------
-install_base_packages() {
-  section "Установка пакетов"
-  if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    dnf_install epel-release git curl parted
-  else
-    dnf_install epel-release git curl ansible-core parted
-  fi
-}
-
-sync_repository() {
-  section "Репозиторий"
-  log_info "Синхронизация ${REPO_URL} (${REF_VALUE}) -> ${PULL_DIR}"
-  install -d -m 0755 "$(dirname "${PULL_DIR}")"
-
-  if [[ -d "${PULL_DIR}/.git" ]]; then
-    (
-      cd "${PULL_DIR}"
-      # Старый клон мог быть по https:// — тогда fetch снова спросит логин, даже если REPO_URL уже git@...
-      if git remote get-url origin &>/dev/null; then
-        prev=$(git remote get-url origin)
-        if [[ "${prev}" != "${REPO_URL}" ]]; then
-          log_warn "origin был ${prev}, выставляем ${REPO_URL} (как в REPO_URL)."
-        fi
-        git_repo remote set-url origin "${REPO_URL}"
-      else
-        git_repo remote add origin "${REPO_URL}"
-      fi
-      git_repo fetch origin "${REF_VALUE}"
-      git_repo checkout "${REF_VALUE}"
-    )
-  else
-    git_repo clone -b "${REF_VALUE}" "${REPO_URL}" "${PULL_DIR}"
-  fi
-}
-
-install_galaxy_collections() {
-  section "Ansible Galaxy"
-  local req_src="${PULL_DIR}/requirements.yml"
-  [[ -f "${req_src}" ]] || fail "Не найден ${req_src}"
-
-  local dl_dir="${GALAXY_DOWNLOAD_DIR}"
-  local fp_file="${dl_dir}/.requirements.sha256"
-  local cached_req="${dl_dir}/requirements.yml"
-  local cur_hash
-  cur_hash=$(sha256sum "${req_src}" | awk '{ print $1 }')
-
-  install -d -m 0755 "${dl_dir}"
-
-  local use_cache=0
-  if [[ -f "${fp_file}" ]] && [[ -f "${cached_req}" ]] && [[ "$(cat "${fp_file}")" == "${cur_hash}" ]]; then
-    if galaxy_cache_artifacts_complete "${dl_dir}"; then
-      use_cache=1
-    else
-      log_warn "Кэш ${dl_dir} неполный (нет части .tar.gz из requirements.yml), выполняется повторное скачивание."
-    fi
-  fi
-
-  if [[ "${use_cache}" -eq 1 ]]; then
-    log_info "Повторный запуск: установка коллекций из кэша ${dl_dir} (исходный requirements.yml не менялся)."
-  else
-    log_info "Скачивание коллекций в ${dl_dir} (ansible-galaxy collection download)…"
-    rm -rf "${dl_dir}"
-    install -d -m 0755 "${dl_dir}"
-    run_with_retries "Скачивание коллекций (galaxy collection download)" \
-      ansible-galaxy collection download -r "${req_src}" -p "${dl_dir}" --timeout "${GALAXY_INSTALL_TIMEOUT}"
-    printf '%s' "${cur_hash}" > "${fp_file}"
-  fi
-
-  local abs_req
-  abs_req=$(mktemp "${TMPDIR:-/tmp}/galaxy-req-abs.XXXXXX.yml")
-  galaxy_write_abs_requirements "${dl_dir}" "${abs_req}"
-  run_with_retries "Установка коллекций (galaxy collection install)" \
-    ansible-galaxy collection install -r "${abs_req}" --force --offline
-  rm -f "${abs_req}"
-}
-
-# Инвентарь для ansible-pull: копия inventory.ini без дубликатов (127.0.0.1, hostname как отдельные хосты).
-# Раньше сюда добавлялись алиасы — из-за этого ansible-pull запускал git-модуль несколько раз на один dest
-# с depth=1 и возникало «fatal: shallow file has changed since we read it». Плейбуки с hosts: localhost
-# и встроенный -l в ansible-pull достаточно без лишних записей в инвентаре.
-prepare_ansible_pull_inventory() {
-  local base="${PULL_DIR}/inventory.ini"
-  local out="${PULL_DIR}/inventory.pull.ini"
-
-  [[ -f "${base}" ]] || fail "Не найден ${base}. Нужен inventory.ini в репозитории (см. inventory.example.ini)."
-
-  cp "${base}" "${out}"
-}
-
-run_stage1_ansible_pull() {
-  section "Первый запуск stage1"
-  prepare_ansible_pull_inventory
-  cd "${PULL_DIR}"
-  # Тот же credential.helper= для git внутри ansible-pull.
-  # env -u ANSIBLE_INVENTORY: иначе значение «localhost» трактуется как путь к файлу и ломает инвентарь.
-  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
-    env -u ANSIBLE_INVENTORY ANSIBLE_FORKS=1 \
-    /usr/bin/ansible-pull \
-    -U "${REPO_URL}" -C "${REF_VALUE}" \
-    --directory "${PULL_DIR}" \
-    -i "${PULL_DIR}/inventory.pull.ini" \
-    bootstrap.yml --tags stage1 -e env="${ENV_VALUE}"
-}
-
-# -------------------------- Main --------------------------
-main() {
-  require_runtime
-  install_base_packages
-  distro_sync_system
-
-  ensure_infra_deploy_key
-
-  resolve_main_disk
-  resolve_disk_size_group
-  load_disk_profile
-  apply_disk_defaults
-
-  ensure_swap
-  expand_root_lv_if_needed
-  prepare_var_and_minio
-
-  if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    section "Ansible"
-    log_info "SKIP_ANSIBLE=1: синхронизация репозитория, Galaxy и ansible-pull пропущены."
-  else
-    sync_repository
-    install_galaxy_collections
-    run_stage1_ansible_pull
-  fi
-
-  distro_sync_system
-  verify_critical_services
-
-  section "Готово"
-  if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    log_info "Bootstrap завершён (без Ansible stage1)."
-  else
-    log_info "Stage-1 выполнен успешно."
-  fi
-}
-
-main "$@"
