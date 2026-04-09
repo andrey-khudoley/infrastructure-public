@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Цепочка подготовки хоста: ОС и диски → репозиторий → коллекции (run.sh в клоне) → ansible-pull stage1.
+# Цепочка подготовки хоста: ОС и диски → репозиторий → run.sh install-deps → run.sh stage1-pull (make в клоне).
 # См. README.md.
 
 set -euo pipefail

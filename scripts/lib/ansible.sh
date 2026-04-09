@@ -26,24 +26,17 @@ sync_repository() {
   fi
 }
 
-prepare_ansible_pull_inventory() {
-  local base="${PULL_DIR}/inventory.ini"
-  local out="${PULL_DIR}/inventory.pull.ini"
-
-  [[ -f "${base}" ]] || fail "Не найден ${base}. Нужен inventory.ini в репозитории (см. inventory.example.ini)."
-
-  cp "${base}" "${out}"
-}
-
 run_stage1_ansible_pull() {
   section "Первый запуск stage1"
-  prepare_ansible_pull_inventory
-  cd "${PULL_DIR}"
-  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= \
-    env -u ANSIBLE_INVENTORY ANSIBLE_FORKS=1 \
-    /usr/bin/ansible-pull \
-    -U "${REPO_URL}" -C "${REF_VALUE}" \
-    --directory "${PULL_DIR}" \
-    -i "${PULL_DIR}/inventory.pull.ini" \
-    bootstrap.yml --tags stage1 -e env="${ENV_VALUE}"
+  local run="${PULL_DIR}/run.sh"
+  [[ -f "${run}" ]] || fail "Не найден ${run}. В корне приватного репозитория должен быть run.sh (обёртка над make, цель stage1-pull)."
+  chmod +x "${run}" 2>/dev/null || true
+  (
+    cd "${PULL_DIR}"
+    export REPO_URL="${REPO_URL}"
+    export REF="${REF_VALUE}"
+    export ENV="${ENV_VALUE}"
+    export PULL_DIR="${PULL_DIR}"
+    ./run.sh stage1-pull
+  )
 }

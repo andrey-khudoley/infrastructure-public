@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Первый ansible-pull с тегом stage1.
+# Первый ansible-pull с тегом stage1: в клоне вызывается ./run.sh stage1-pull → make stage1-pull.
 
 step_ansible_pull_stage1() {
   if [[ "${SKIP_ANSIBLE}" == "1" ]]; then

@@ -186,8 +186,7 @@ curl -fsSL https://raw.githubusercontent.com/<org>/infrastructure-public/HEAD/st
 ### `ansible.sh`
 
 - `sync_repository` — `git clone` или `fetch`/`checkout` в `PULL_DIR`.
-- `prepare_ansible_pull_inventory` — копия `inventory.ini` в `inventory.pull.ini`.
-- `run_stage1_ansible_pull` — первый запуск `/usr/bin/ansible-pull` с тегом `stage1`.
+- `run_stage1_ansible_pull` — **`${PULL_DIR}/run.sh stage1-pull`** (в клоне: **make** цель **`stage1-pull`**, внутри — `scripts/stage1-ansible-pull.sh`; то же, что **`make stage1-pull-*`** при заданных `REPO_URL`, `REF`, `PULL_DIR`).
 
 ## Шаги сценария (порядок в `start.sh`)
 
