@@ -1,35 +1,53 @@
 # Скрипты первичной настройки хоста (bootstrap)
 
+**Репозиторий:** [https://github.com/andrey-khudoley/infrastructure-public.git](https://github.com/andrey-khudoley/infrastructure-public.git)
+
 Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками, установка коллекций Galaxy через **`run.sh`** из клонированного репо и первый запуск **`ansible-pull`** с тегом `stage1`.
+
+## Алгоритм вызова
+
+1. **Склонировать этот репозиторий целиком** (нужны `start.sh` и каталог `scripts/` с библиотеками и шагами; одного `start.sh` недостаточно).
+2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`.
+3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
+
+Минимальный пример (подставьте URL своего приватного репо с плейбуками):
+
+```bash
+git clone https://github.com/andrey-khudoley/infrastructure-public.git
+cd infrastructure-public
+sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
+```
+
+Запуск **только** через `curl …/start.sh | bash` **не поддерживается**: `start.sh` вычисляет корень по пути к себе и подключает файлы из `scripts/`; при выполнении скрипта со stdin путь к каталогу с репозиторием не определяется, а без остальных файлов цепочка не работает.
 
 ## Точка входа
 
-Единственный сценарий верхнего уровня — **`start.sh`**: по очереди подключает шаги из `scripts/`. Все примеры ниже предполагают запуск **от root** (или через `sudo bash`).
+Единственный сценарий верхнего уровня — **`start.sh`**: последовательно подключает шаги из `scripts/` и вызывает функции `step_*`. Все примеры ниже предполагают запуск **от root** (или через `sudo bash`).
 
 ### Репозиторий и окружение Ansible
 
 Базовый запуск: ветка `main`, окружение `stage`, приватный репо по SSH:
 
 ```bash
-ENV=stage REF=main REPO_URL=git@github.com:org/infra-private.git bash start.sh
+ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Production и фиксированный релиз (тег вместо ветки):
 
 ```bash
-ENV=prod REF=v1.2.0 REPO_URL=git@github.com:org/infra-private.git bash start.sh
+ENV=prod REF=v1.2.0 REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Control-узел с веткой по умолчанию (`ENV` по умолчанию — `ctl`):
 
 ```bash
-REF=main REPO_URL=git@github.com:org/infra-private.git bash start.sh
+REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Другой каталог клона (не `/var/lib/infra/src`):
 
 ```bash
-PULL_DIR=/opt/infra/src ENV=stage REF=main REPO_URL=git@github.com:org/infra-private.git bash start.sh
+PULL_DIR=/opt/infra/src ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ### Без Ansible (только ОС, диски, пакеты)
@@ -43,7 +61,7 @@ SKIP_ANSIBLE=1 bash start.sh
 С теми же переменными, что и для полного прогона (для согласованности профиля дисков), но без клона:
 
 ```bash
-SKIP_ANSIBLE=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+SKIP_ANSIBLE=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ### Диски: `/var`, `/minio`, LVM
@@ -51,7 +69,7 @@ SKIP_ANSIBLE=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git bash star
 Выделение `/var` и при необходимости `/minio` из свободного места в VG на том же диске, что и root (нужно явное разрешение):
 
 ```bash
-VAR_ALLOW_ROOT_DISK=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+VAR_ALLOW_ROOT_DISK=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ### SSH deploy key и автоматизация
@@ -59,7 +77,7 @@ VAR_ALLOW_ROOT_DISK=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git ba
 После первого показа ключа скрипт ждёт Enter. Для CI/автоматизации, когда ключ уже добавлен в GitHub:
 
 ```bash
-INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Для приватного GitHub по HTTPS без токена используйте **`git@...`** или `ssh://` и deploy key (см. раздел **«Шаг 30 — ssh-deploy-key»** ниже).
@@ -70,21 +88,21 @@ INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:org/infra-private.git 
 
 ```bash
 GALAXY_INSTALL_TIMEOUT=600 GALAXY_INSTALL_RETRIES=10 GALAXY_RETRY_SLEEP_SEC=15 \
-  ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+  ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Другой каталог кэша коллекций:
 
 ```bash
 GALAXY_DOWNLOAD_DIR=/var/lib/infra/galaxy-cache \
-  ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+  ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Нестандартный путь к `requirements.yml` коллекций в клоне (редко):
 
 ```bash
 COLLECTIONS_REQ=/var/lib/infra/src/collections/requirements.yml \
-  ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+  ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ### Профиль дисков из файла
@@ -93,36 +111,20 @@ COLLECTIONS_REQ=/var/lib/infra/src/collections/requirements.yml \
 
 ```bash
 DISK_VARS_FILE=/etc/infra/bootstrap-disk.env \
-  ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
+  ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 Явно указать блочное устройство для расчёта профиля:
 
 ```bash
-MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:org/infra-private.git bash start.sh
-```
-
-### Запуск по ссылке (`curl`)
-
-Скачать только `start.sh` и передать переменные в **bash** (stdin — не интерактивный терминал для deploy key; для первого SSH-ключа удобнее клонировать репо и запускать `start.sh` локально):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/<org>/infrastructure-public/HEAD/start.sh | \
-  ENV=stage REF=main REPO_URL=git@github.com:<org>/infra-private.git bash
-```
-
-С отключением паузы после вывода ключа (если ключ уже в GitHub):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/<org>/infrastructure-public/HEAD/start.sh | \
-  INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:<org>/infra-private.git bash
+MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ## Структура репозитория
 
 ```
 ├── README.md
-├── start.sh                 # оркестратор
+├── start.sh                 # оркестратор: source scripts/lib/*.sh и scripts/NN-*.sh, затем step_*()
 ├── scripts/
 │   ├── lib/
 │   │   ├── env.sh           # значения по умолчанию для переменных окружения
@@ -131,7 +133,11 @@ curl -fsSL https://raw.githubusercontent.com/<org>/infrastructure-public/HEAD/st
 │   │   └── ansible.sh       # sync репозитория, ansible-pull
 │   ├── 10-require-runtime.sh
 │   ├── 20-install-packages.sh
-│   ├── …
+│   ├── 30-ssh-deploy-key.sh
+│   ├── 40-disk-storage.sh
+│   ├── 50-sync-repository.sh
+│   ├── 60-ansible-collections.sh
+│   ├── 70-ansible-pull-stage1.sh
 │   └── 90-finalize.sh
 ```
 
@@ -206,7 +212,7 @@ curl -fsSL https://raw.githubusercontent.com/<org>/infrastructure-public/HEAD/st
 
 1. Устанавливает базовые пакеты через `dnf`:
    - при **`SKIP_ANSIBLE=1`**: `epel-release`, `git`, `curl`, `parted`;
-   - иначе дополнительно: `ansible-core`, **`make`** (нужен для `run.sh` → `make install-deps` в приватном репозитории).
+   - иначе: `epel-release`, `git`, `curl`, `ansible-core`, `parted`, **`make`** (нужен для `run.sh` → `make install-deps` в приватном репозитории).
 
 2. Выполняет **`dnf distro-sync -y`** — выравнивание версий установленных пакетов с репозиториями (в т.ч. после подключения EPEL).
 
