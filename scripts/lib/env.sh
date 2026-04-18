@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Параметры запуска (по умолчанию). Подключается из start.sh.
+# Параметры запуска по умолчанию. Подключается из start.sh.
+# Удобно править этот файл в клоне под свой хост/репозиторий; переменные окружения при запуске по-прежнему имеют приоритет.
 
 ENV_VALUE="${ENV:-ctl}"                                    # ctl|stage|prod
 REPO_URL="${REPO_URL:-https://github.com/andrey-khudoley/infrastructure-private.git}"

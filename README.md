@@ -124,13 +124,11 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ```
 ├── README.md
-├── start.sh                 # оркестратор: source scripts/lib/*.sh и scripts/NN-*.sh, затем step_*()
+├── start.sh                 # source scripts/lib/env.sh, common.sh и scripts/NN-*.sh; step_*()
 ├── scripts/
 │   ├── lib/
-│   │   ├── env.sh           # значения по умолчанию для переменных окружения
-│   │   ├── common.sh        # логирование, dnf, git, проверки sshd/NM, deploy key
-│   │   ├── disk.sh          # диски, LVM, swap, /var, /minio
-│   │   └── ansible.sh       # sync репозитория, ansible-pull
+│   │   ├── env.sh           # значения по умолчанию (удобно править под свой хост/репо)
+│   │   └── common.sh        # логирование, dnf, git, distro-sync (общее для шагов)
 │   ├── 10-require-runtime.sh
 │   ├── 20-install-packages.sh
 │   ├── 30-ssh-deploy-key.sh
@@ -143,7 +141,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ## Переменные окружения
 
-Значения по умолчанию задаются в `scripts/lib/env.sh` и могут быть переопределены перед запуском `start.sh`.
+Значения по умолчанию задаются в `scripts/lib/env.sh` (можно отредактировать файл в клоне под постоянные настройки) и при необходимости переопределяются переменными окружения перед запуском `start.sh`.
 
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
@@ -167,32 +165,19 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Дополнительно для разметки дисков (часто задаются в `bootstrap-disk.env`): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_ALLOW_ROOT_DISK`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — см. раздел **«Шаг 40 — disk-storage»** ниже.
 
-## Библиотеки `scripts/lib/`
+## `scripts/lib/env.sh`
 
-Общие функции подключаются из `start.sh` до выполнения пошаговых сценариев.
+Объявляет переменные с значениями по умолчанию (таблица ниже). Подключается из `start.sh` первым.
 
-### `env.sh`
+## Библиотека `scripts/lib/common.sh`
 
-Объявляет переменные окружения с значениями по умолчанию (таблица выше).
-
-### `common.sh`
+Подключается из `start.sh` после `env.sh`, до пошаговых сценариев. Содержит только то, что используется **несколькими** шагами:
 
 - Логирование: `log_info`, `log_warn`, `log_err`, `section`, `fail`.
-- `has_cmd`, `dnf_install`, `git_repo` (клон без интерактивного `credential.helper` для HTTPS).
-- `repo_url_is_ssh` — определяет, нужен ли SSH-ключ для `REPO_URL`.
-- `ensure_infra_deploy_key` — создание ed25519 и вывод публичной части для Deploy keys.
+- `has_cmd`, `dnf_install`, `git_repo` (git без интерактивного `credential.helper` для HTTPS).
 - `distro_sync_system` — `dnf distro-sync -y`.
-- `verify_sshd`, `verify_network_stack_if_managed`, `verify_critical_services` — проверки после обновлений пакетов.
-- `require_runtime` — root, наличие `dnf` и базовых утилит (`lsblk`, `findmnt`, …).
 
-### `disk.sh`
-
-Функции разметки и переноса данных: определение дисков, профиль из файла или временного клона, swap, расширение root LV, перенос `/var` и создание `/minio` на отдельном разделе или в LVM. Подробнее — раздел **«Шаг 40 — disk-storage»** ниже.
-
-### `ansible.sh`
-
-- `sync_repository` — `git clone` или `fetch`/`checkout` в `PULL_DIR`.
-- `run_stage1_ansible_pull` — **`${PULL_DIR}/run.sh stage1-pull`** (в клоне: **make** цель **`stage1-pull`**, внутри — `scripts/stage1-ansible-pull.sh`; то же, что **`make stage1-pull-*`** при заданных `REPO_URL`, `REF`, `PULL_DIR`).
+Остальная логика лежит в соответствующих файлах `scripts/NN-*.sh` (см. разделы шагов ниже).
 
 ## Шаги сценария (порядок в `start.sh`)
 
@@ -203,7 +188,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Проверяет, что скрипт запущен от **root**, в системе есть **dnf**, и доступны утилиты: `lsblk`, `findmnt`, `awk`, `sed`, `blkid`, `mount`, `umount`.
 
-При невыполнении условий вызывается `fail` с сообщением и ненулевым кодом выхода. Реализация: `require_runtime` в `scripts/lib/common.sh`.
+При невыполнении условий вызывается `fail` с сообщением и ненулевым кодом выхода. Реализация: `require_runtime` в этом же файле.
 
 ### Шаг 20 — `install-packages`
 
@@ -229,7 +214,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Для **HTTPS**-URL этот шаг ничего не делает. Для приватного репозитория на GitHub без токена в URL используйте SSH.
 
-Реализация: `ensure_infra_deploy_key` в `scripts/lib/common.sh`.
+Реализация: `ensure_infra_deploy_key` в `scripts/30-ssh-deploy-key.sh`.
 
 ### Шаг 40 — `disk-storage`
 
@@ -247,7 +232,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Параметры (в т.ч. `VAR_ALLOW_ROOT_DISK`, `VAR_SIZE_G`, `MINIO_SIZE_G`) задаются в профиле дисков или через переменные окружения — см. таблицу **«Переменные окружения»** выше.
 
-Детали реализации — в `scripts/lib/disk.sh`.
+Детали реализации — в `scripts/40-disk-storage.sh`.
 
 ### Шаг 50 — `sync-repository`
 
@@ -260,7 +245,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Используется обёртка `git_repo` без интерактивного запроса учётных данных для HTTPS.
 
-Реализация: `scripts/lib/ansible.sh`.
+Реализация: `sync_repository` в `scripts/50-sync-repository.sh`.
 
 ### Шаг 60 — `ansible-collections`
 
@@ -287,7 +272,7 @@ cd PULL_DIR
 
 При **`SKIP_ANSIBLE=1`** пропускается.
 
-Иначе вызывается **`run_stage1_ansible_pull`** (`scripts/lib/ansible.sh`):
+Иначе вызывается **`run_stage1_ansible_pull`** (`scripts/70-ansible-pull-stage1.sh`):
 
 1. Копируется **`inventories/local.ini`** → **`inventory.pull.ini`** в корне клона (ожидается рабочий инвентарь в приватном репозитории; см. **`ansible.cfg`** в клоне).
 2. Запускается **`ansible-pull`** с URL `REPO_URL`, веткой `REF`, каталогом `PULL_DIR`, инвентарём `inventory.pull.ini`, плейбуком **`bootstrap.yml`**, тегами **`stage1`**, extra vars **`env=ENV_VALUE`**.
@@ -300,7 +285,7 @@ cd PULL_DIR
 **Функция:** `step_finalize`
 
 1. Повторный **`dnf distro-sync -y`** после установки пакетов и stage1.
-2. **`verify_critical_services`** — `sshd -t`, при необходимости проверка **NetworkManager**, если он включён.
+2. **`verify_critical_services`** — `sshd -t`, при необходимости проверка **NetworkManager**, если он включён (реализация в `scripts/90-finalize.sh`).
 
 Выводится итоговое сообщение: с `SKIP_ANSIBLE=1` или после полного прохода.
 

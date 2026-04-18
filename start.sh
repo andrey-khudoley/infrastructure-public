@@ -10,11 +10,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT}/scripts/lib/env.sh"
 # shellcheck source=scripts/lib/common.sh
 source "${ROOT}/scripts/lib/common.sh"
-# shellcheck source=scripts/lib/disk.sh
-source "${ROOT}/scripts/lib/disk.sh"
-# shellcheck source=scripts/lib/ansible.sh
-source "${ROOT}/scripts/lib/ansible.sh"
-
 # shellcheck source=scripts/10-require-runtime.sh
 source "${ROOT}/scripts/10-require-runtime.sh"
 # shellcheck source=scripts/20-install-packages.sh
