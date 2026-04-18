@@ -8,7 +8,7 @@
 
 | Репозиторий | Роль |
 |-------------|------|
-| **Этот (public)** | Подготовка хоста: пакеты, диски, при **`REPO_URL`** вида `git@…` / `ssh://…` — ключ для `git`, клон приватного репо в `PULL_DIR`, один вызов **`make start`**, финальный `distro-sync` и проверки. |
+| **Этот (public)** | Подготовка хоста: пакеты, диски; шаг **30** при необходимости приводит **`REPO_URL`** с **`github.com`** по HTTPS к **`git@…`** и готовит deploy key; иначе задайте SSH-URL сами; клон в `PULL_DIR`, **`make start`**, `distro-sync` и проверки. |
 | **Приватный** | Вся прикладная Ansible-логика: цель **`start`** в **`Makefile`** (плейбуки, коллекции, роли и т.д.). |
 
 Публичный сценарий **не** дублирует содержимое приватного **`Makefile`**: он только гарантирует окружение и вызывает **`make start`** с согласованным набором переменных (см. раздел **«Контракт: переменные для `make start`»**).
@@ -19,7 +19,7 @@
 2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`.
 3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
 
-Минимальный пример с **дефолтами из `scripts/lib/env.sh`** (ветка `main`, окружение `stage`, **`REPO_URL`** — HTTPS на приватный репозиторий; для клона через HTTPS нужен доступ Git к репозиторию — токен/credential helper или видимость репо):
+Минимальный пример с **дефолтами из `scripts/lib/env.sh`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **30** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
 
 ```bash
 git clone https://github.com/andrey-khudoley/infrastructure-public.git
@@ -56,7 +56,7 @@ sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructu
 
 ### Репозиторий и окружение Ansible
 
-Базовый запуск: ветка `main`, окружение `stage`, **`REPO_URL`** берётся из **`env.sh`** (HTTPS). Если клон по HTTPS недоступен без настройки git, задайте **`REPO_URL=git@…`** (см. шаг **30**):
+Базовый запуск: ветка `main`, окружение `stage`, **`REPO_URL`** из **`env.sh`** (HTTPS на `github.com` обрабатывается в начале шага **30**). Для другого хоста (не `github.com`) или нестандартного URL задайте **`REPO_URL`** сразу как **`git@…`** или **`ssh://…`** (см. шаг **30**):
 
 ```bash
 ENV=stage REF=main bash start.sh
@@ -181,7 +181,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
 | `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make start`**). |
-| `REPO_URL` | `https://github.com/andrey-khudoley/infrastructure-private.git` (см. `scripts/lib/env.sh`) | URL приватного репозитория с плейбуками. Для SSH (`git@…` / `ssh://…`) шаг **30** подготовит deploy key; для HTTPS нужны учётные данные git при клоне. |
+| `REPO_URL` | в **`env.sh`** по умолчанию HTTPS на `github.com/…`; в шаге **30** такой URL приводится к **`git@github.com:…`**. Итоговый URL — тот же, что для `git clone`. Там же готовится deploy key для `git@…` / `ssh://…`. Другой хост или клон строго по HTTPS — задайте URL вручную (для HTTPS без конвертации нужны учётные данные git). |
 | `REF` | `main` | Ветка, тег или коммит. |
 | `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняется **`make start`**. |
 | `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не запускать **`make start`**. |
@@ -202,17 +202,18 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ## `scripts/lib/env.sh`
 
-Объявляет переменные с значениями по умолчанию (см. таблицу **«Переменные окружения»** выше). Подключается из `start.sh` первым. В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
+Объявляет только значения по умолчанию (см. таблицу **«Переменные окружения»** выше), без преобразований URL. Подключается из `start.sh` первым. Приведение **`https://github.com/…`** к **`git@…`** выполняется в шаге **30** (`normalize_github_https_repo_url` в **`scripts/lib/common.sh`**). В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
 
 ## Библиотека `scripts/lib/common.sh`
 
-Подключается из `start.sh` после `env.sh`, до пошаговых сценариев. Содержит только то, что используется **несколькими** шагами:
+Подключается из `start.sh` после `env.sh`, до пошаговых сценариев. Содержит то, что используется **несколькими** шагами:
 
 - Логирование: `log_info`, `log_warn`, `log_err`, `section`, `fail`.
 - `has_cmd`, `dnf_install`, `git_repo` (git без интерактивного `credential.helper` для HTTPS — см. комментарий в начале файла).
+- `normalize_github_https_repo_url` — GitHub HTTPS → `git@…` (вызывается из шага **30**).
 - `distro_sync_system` — `dnf distro-sync -y`.
 
-Остальная логика лежит в соответствующих файлах `scripts/NN-*.sh` (см. разделы шагов ниже).
+Остальная логика шагов — в файлах `scripts/NN-*.sh` (см. разделы ниже).
 
 ## Шаги сценария (порядок в `start.sh`)
 
@@ -243,13 +244,15 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 **Файл:** `scripts/30-ssh-deploy-key.sh`  
 **Функция:** `step_ssh_deploy_key`
 
-Если `REPO_URL` начинается с **`git@`** или **`ssh://`**, для доступа к приватному репозиторию создаётся ключ **`INFRA_SSH_KEY`** (ed25519), печатается публичная часть — её нужно добавить в **Deploy keys** (read-only) на GitHub/GitLab.
+Сначала вызывается **`normalize_github_https_repo_url`** из **`scripts/lib/common.sh`**: если **`REPO_URL`** — **`https://`** или **`http://`** на **`github.com`** в форме **`/владелец/репозиторий`**, подставляется **`git@github.com:владелец/репозиторий.git`**; остальные URL не меняются.
+
+Затем, если `REPO_URL` начинается с **`git@`** или **`ssh://`**, для доступа к приватному репозиторию создаётся ключ **`INFRA_SSH_KEY`** (ed25519), печатается публичная часть — её нужно добавить в **Deploy keys** (read-only) на GitHub/GitLab.
 
 Пока ключ не добавлен, скрипт может ждать нажатия Enter (отключается **`INFRA_SSH_SKIP_PROMPT=1`**).
 
-Для **HTTPS**-URL этот шаг ничего не делает. Для приватного репозитория на GitHub без токена в URL используйте SSH.
+Если после нормализации **`REPO_URL`** остаётся **HTTPS** (другой хост или не `github.com`), создание ключа пропускается — нужны учётные данные git для HTTPS.
 
-Реализация: `ensure_infra_deploy_key` в `scripts/30-ssh-deploy-key.sh`.
+Реализация: `step_ssh_deploy_key` → `normalize_github_https_repo_url` (`common.sh`), затем `ensure_infra_deploy_key` в `scripts/30-ssh-deploy-key.sh`.
 
 ### Шаг 40 — `disk-storage`
 
@@ -319,7 +322,7 @@ make start
 ### Что править при изменении контракта
 
 1. **Приватный репо:** цель **`start`**, зависимости и использование переменных окружения.
-2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`**), при необходимости **`scripts/lib/env.sh`** и таблицы в этом **README**.
+2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`**), при изменении **`REPO_URL`** — **`normalize_github_https_repo_url`** в **`scripts/lib/common.sh`**, **`scripts/lib/env.sh`**, таблицы в этом **README**.
 3. Сохраняйте согласованность имён: внешний интерфейс для **`make`** — **`REF`** и **`ENV`**, а не **`REF_VALUE`** / **`ENV_VALUE`** (последние — только внутри shell после `env.sh`).
 
 ### Комментарии в коде
@@ -329,8 +332,8 @@ make start
 Подробные пояснения по сценарию находятся в:
 
 - **`start.sh`** — порядок шагов и ограничения запуска;
-- **`scripts/lib/env.sh`** — группы переменных и шаги;
-- **`scripts/lib/common.sh`** — поведение **`git_repo`**;
+- **`scripts/lib/env.sh`** — значения по умолчанию переменных;
+- **`scripts/lib/common.sh`** — **`git_repo`**, **`normalize_github_https_repo_url`**, **`dnf_install`**;
 - **`scripts/10-require-runtime.sh`** … **`scripts/50-sync-repository.sh`**, **`scripts/90-finalize.sh`** — шапка файла и JSDoc у **`step_*`** и вспомогательных функций;
 - **`scripts/40-disk-storage.sh`** — шапка файла и JSDoc у каждой функции (включая вложенную **`pick_disk`**);
 - **`scripts/70-ansible-pull-stage1.sh`** — контракт **`make start`**, связка **`REF`** / **`REF_VALUE`**, историческое имя файла, JSDoc у **`run_stage1_ansible_pull`** / **`step_ansible_pull_stage1`**.

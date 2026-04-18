@@ -10,7 +10,7 @@
 # Порядок шагов (не менять без обновления README и зависимостей между шагами):
 #   10  root/dnf/утилиты
 #   20  пакеты (+ ansible-core и make, если не SKIP_ANSIBLE)
-#   30  deploy key для SSH-URL приватного репо
+#   30  github.com HTTPS → git@… при необходимости; deploy key для SSH-URL приватного репо
 #   40  диски, swap, при необходимости /var и /minio
 #   50  git clone/fetch в PULL_DIR
 #   70  make start в PULL_DIR (контракт с приватным репо)

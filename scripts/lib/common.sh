@@ -4,6 +4,7 @@
 #
 # git_repo — обёртка над git с отключённым credential.helper, чтобы clone/fetch по HTTPS
 # не блокировались интерактивным запросом пароля в неинтерактивном bootstrap.
+# normalize_github_https_repo_url — github.com HTTPS → git@… (вызывается из шага 30)
 # dnf_install / distro_sync_system — единообразные вызовы dnf для шагов 20 и 90.
 
 log_info() { echo "[+] $*"; }
@@ -21,6 +22,19 @@ has_cmd() { command -v "$1" &>/dev/null; }
 
 git_repo() {
   git -c credential.helper= "$@"
+}
+
+# Заменяет REPO_URL вида https://github.com/owner/repo на git@github.com:owner/repo.git.
+#
+# @globals REPO_URL
+normalize_github_https_repo_url() {
+  if [[ "${REPO_URL}" =~ ^https?://github\.com/([^/]+)/([^/]+)/?$ ]]; then
+    local owner="${BASH_REMATCH[1]}"
+    local repo="${BASH_REMATCH[2]}"
+    repo="${repo%.git}"
+    REPO_URL="git@github.com:${owner}/${repo}.git"
+    log_info "REPO_URL приведён к SSH (github.com): ${REPO_URL}"
+  fi
 }
 
 dnf_install() {

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
-# Шаг 30 — SSH-ключ для доступа к приватному репозиторию по git@ или ssh://.
-# Для HTTPS этот шаг ничего не делает (ключ не требуется для анонимного чтения или токена в URL).
+# Шаг 30 — при необходимости приведение github.com HTTPS в REPO_URL к git@…, затем SSH-ключ (deploy key).
+# Если после этого REPO_URL остаётся HTTPS, ключ не создаётся (токен/credential helper для git).
 
 # Проверяет, требуется ли SSH для текущего REPO_URL.
 #
@@ -48,5 +48,6 @@ ensure_infra_deploy_key() {
 #
 # @return 0
 step_ssh_deploy_key() {
+  normalize_github_https_repo_url
   ensure_infra_deploy_key
 }
