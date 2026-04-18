@@ -8,7 +8,7 @@
 
 | Репозиторий | Роль |
 |-------------|------|
-| **Этот (public)** | Подготовка хоста: пакеты, диски, SSH для `git`, клон приватного репо в `PULL_DIR`, один вызов **`make start`**, финальный `distro-sync` и проверки. |
+| **Этот (public)** | Подготовка хоста: пакеты, диски, при **`REPO_URL`** вида `git@…` / `ssh://…` — ключ для `git`, клон приватного репо в `PULL_DIR`, один вызов **`make start`**, финальный `distro-sync` и проверки. |
 | **Приватный** | Вся прикладная Ansible-логика: цель **`start`** в **`Makefile`** (плейбуки, коллекции, роли и т.д.). |
 
 Публичный сценарий **не** дублирует содержимое приватного **`Makefile`**: он только гарантирует окружение и вызывает **`make start`** с согласованным набором переменных (см. раздел **«Контракт: переменные для `make start`»**).
@@ -19,11 +19,17 @@
 2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`.
 3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
 
-Минимальный пример (подставьте URL своего приватного репо с плейбуками):
+Минимальный пример с **дефолтами из `scripts/lib/env.sh`** (ветка `main`, окружение `stage`, **`REPO_URL`** — HTTPS на приватный репозиторий; для клона через HTTPS нужен доступ Git к репозиторию — токен/credential helper или видимость репо):
 
 ```bash
 git clone https://github.com/andrey-khudoley/infrastructure-public.git
 cd infrastructure-public
+sudo env ENV=stage REF=main bash start.sh
+```
+
+Типичный вариант для **приватного** репо на GitHub **без** токена в URL — явный **`git@…`** и deploy key (шаг **30** создаст ключ и покажет публичную часть):
+
+```bash
 sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
@@ -50,7 +56,13 @@ sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructu
 
 ### Репозиторий и окружение Ansible
 
-Базовый запуск: ветка `main`, окружение `stage`, приватный репо по SSH:
+Базовый запуск: ветка `main`, окружение `stage`, **`REPO_URL`** берётся из **`env.sh`** (HTTPS). Если клон по HTTPS недоступен без настройки git, задайте **`REPO_URL=git@…`** (см. шаг **30**):
+
+```bash
+ENV=stage REF=main bash start.sh
+```
+
+Тот же сценарий с явным SSH-URL:
 
 ```bash
 ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
@@ -169,7 +181,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
 | `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make start`**). |
-| `REPO_URL` | см. `scripts/lib/env.sh` (по умолчанию GitHub **infrastructure-private**) | URL приватного репозитория с плейбуками. |
+| `REPO_URL` | `https://github.com/andrey-khudoley/infrastructure-private.git` (см. `scripts/lib/env.sh`) | URL приватного репозитория с плейбуками. Для SSH (`git@…` / `ssh://…`) шаг **30** подготовит deploy key; для HTTPS нужны учётные данные git при клоне. |
 | `REF` | `main` | Ветка, тег или коммит. |
 | `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняется **`make start`**. |
 | `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не запускать **`make start`**. |
@@ -190,7 +202,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ## `scripts/lib/env.sh`
 
-Объявляет переменные с значениями по умолчанию (таблица ниже). Подключается из `start.sh` первым. В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
+Объявляет переменные с значениями по умолчанию (см. таблицу **«Переменные окружения»** выше). Подключается из `start.sh` первым. В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
 
 ## Библиотека `scripts/lib/common.sh`
 
