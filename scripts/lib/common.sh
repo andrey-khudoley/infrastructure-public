@@ -1,5 +1,10 @@
 # shellcheck shell=bash
-# Общие утилиты: логирование, dnf, git, distro-sync (используется в нескольких шагах).
+#
+# Общие утилиты для шагов start.sh (подключается сразу после env.sh).
+#
+# git_repo — обёртка над git с отключённым credential.helper, чтобы clone/fetch по HTTPS
+# не блокировались интерактивным запросом пароля в неинтерактивном bootstrap.
+# dnf_install / distro_sync_system — единообразные вызовы dnf для шагов 20 и 90.
 
 log_info() { echo "[+] $*"; }
 log_warn() { echo "[!] $*"; }

@@ -1,6 +1,12 @@
 # shellcheck shell=bash
-# Финальный distro-sync и проверка sshd / NetworkManager.
+#
+# Шаг 90 — после пакетов и «make start» повторный distro-sync и смоук-тесты критичных сервисов,
+# чтобы выявить поломанные зависимости до потери доступа по SSH.
 
+# Проверяет конфигурацию sshd и доступность сервиса после обновлений пакетов.
+#
+# @return 0 при успешных проверках
+# @exit   через fail при критичных ошибках sshd
 verify_sshd() {
   local sshd_bin=""
   if [[ -x /usr/sbin/sshd ]]; then
@@ -23,6 +29,10 @@ verify_sshd() {
   fi
 }
 
+# Если NetworkManager включён в systemd — проверяет, что он active.
+#
+# @return 0
+# @exit   через fail, если NM enabled, но не active
 verify_network_stack_if_managed() {
   if systemctl list-unit-files NetworkManager.service &>/dev/null; then
     if systemctl is-enabled --quiet NetworkManager.service 2>/dev/null; then
@@ -32,6 +42,9 @@ verify_network_stack_if_managed() {
   fi
 }
 
+# Последовательно: sshd, затем NetworkManager при необходимости.
+#
+# @return 0
 verify_critical_services() {
   section "Критичные сервисы"
   verify_sshd
@@ -39,14 +52,18 @@ verify_critical_services() {
   log_info "Критичные проверки пройдены."
 }
 
+# Финальный distro-sync, проверки сервисов и итоговое сообщение.
+#
+# @globals SKIP_ANSIBLE
+# @return 0
 step_finalize() {
   distro_sync_system
   verify_critical_services
 
   section "Готово"
   if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    log_info "Bootstrap завершён (без Ansible stage1)."
+    log_info "Bootstrap завершён (без make start в приватном репо)."
   else
-    log_info "Stage-1 выполнен успешно."
+    log_info "Приватный репозиторий: make start выполнен успешно."
   fi
 }

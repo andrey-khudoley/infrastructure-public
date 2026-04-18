@@ -1,10 +1,20 @@
 # shellcheck shell=bash
-# Deploy key для git@ / ssh:// REPO_URL.
+#
+# Шаг 30 — SSH-ключ для доступа к приватному репозиторию по git@ или ssh://.
+# Для HTTPS этот шаг ничего не делает (ключ не требуется для анонимного чтения или токена в URL).
 
+# Проверяет, требуется ли SSH для текущего REPO_URL.
+#
+# @globals REPO_URL
+# @return 0 если URL — git@… или ssh://… (нужен ключ); иначе 1
 repo_url_is_ssh() {
   [[ "${REPO_URL}" == git@* ]] || [[ "${REPO_URL}" == ssh://* ]]
 }
 
+# Создаёт при необходимости deploy key и выставляет GIT_SSH_COMMAND для последующих git вызовов.
+#
+# @globals REPO_URL INFRA_SSH_KEY INFRA_SSH_KEY_COMMENT INFRA_SSH_SKIP_PROMPT
+# @return 0 если URL не SSH или ключ готов; иначе интерактивная пауза до Enter
 ensure_infra_deploy_key() {
   repo_url_is_ssh || return 0
 
@@ -34,6 +44,9 @@ ensure_infra_deploy_key() {
   export GIT_SSH_COMMAND="ssh -i \"${INFRA_SSH_KEY}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 }
 
+# Точка входа шага 30 для start.sh.
+#
+# @return 0
 step_ssh_deploy_key() {
   ensure_infra_deploy_key
 }

@@ -1,5 +1,13 @@
 # shellcheck shell=bash
-# Профиль дисков, swap, root LV, /var и /minio (требует scripts/lib/common.sh).
+#
+# Шаг 40 — разметка и точки монтирования под инфраструктуру (LVM, отдельный /var, /minio).
+# Параметры: DISK_VARS_*, MAIN_DISK_DEVICE, переменные профиля (см. README).
+# Зависит от scripts/lib/common.sh. Логика объёмная — смотрите имена функций ниже по файлу.
+
+# Добавляет одну строку в /etc/fstab, если такой точной строки ещё нет.
+#
+# @param $1  полная строка fstab (UUID=…, mountpoint, fs, opts, dump, pass)
+# @return 0
 append_fstab_once() {
   local line="$1"
   [[ -n "$line" ]] || return 0
@@ -8,15 +16,27 @@ append_fstab_once() {
   fi
 }
 
+# Проверяет, что аргумент — неотрицательное целое (цифры).
+#
+# @param $1  строка для проверки
+# @return 0 если совпадает с ^[0-9]+$, иначе 1
 is_non_negative_int() {
   [[ "$1" =~ ^[0-9]+$ ]]
 }
 
+# Убирает суффикс номера раздела у пути устройства (например /dev/sda3 → /dev/sda).
+#
+# @param $1  путь блочного устройства
+# @stdout   базовый диск
 disk_base_name() {
   local dev="$1"
   echo "$dev" | sed -E 's/p?[0-9]+$//'
 }
 
+# Определяет диск, на котором смонтирован корень / (по цепочке findmnt → lsblk).
+#
+# @stdout путь вида /dev/… к диску
+# @return 0 если диск найден, 1 если определить не удалось
 detect_root_base_disk() {
   local root_source root_real parent_kname
 
@@ -38,6 +58,12 @@ detect_root_base_disk() {
   return 1
 }
 
+# Находит новый дочерний раздел диска, отсутствовавший в списке имён до операции.
+#
+# @param $1  путь к диску (родитель)
+# @param $2  многострочный список имён разделов до изменения (для сравнения)
+# @stdout путь к новому разделу
+# @return 0 при успехе, 1 если новый раздел не обнаружен
 detect_new_partition() {
   local disk="$1"
   local before_list="$2"
@@ -55,6 +81,11 @@ detect_new_partition() {
   return 1
 }
 
+# Возвращает координаты последнего свободного сегмента на диске (parted unit MiB).
+#
+# @param $1  путь к диску
+# @stdout три числа: start end size (MiB)
+# @return 0 при успехе, 1 если свободного места нет или парсинг не удался
 get_last_free_segment_mib() {
   local disk="$1"
   local free_line
@@ -71,6 +102,12 @@ get_last_free_segment_mib() {
   echo "${start} ${end} ${size}"
 }
 
+# Нормализует числовую переменную профиля по имени: при некорректном значении подставляет fallback.
+#
+# @param $1  имя переменной (indirect expansion)
+# @param $2  значение по умолчанию при исправлении
+# @globals имя из $1 — может быть перезаписано через printf -v
+# @return 0
 validate_numeric_profile_var() {
   local var_name="$1"
   local fallback="$2"
@@ -82,6 +119,10 @@ validate_numeric_profile_var() {
   fi
 }
 
+# Вызывает restorecon для пути, если утилита доступна (SELinux).
+#
+# @param $1  путь к дереву каталогов
+# @return 0
 restore_selinux_context_if_available() {
   local path="$1"
   if has_cmd restorecon; then
@@ -89,6 +130,9 @@ restore_selinux_context_if_available() {
   fi
 }
 
+# Расширяет ФС на корне после увеличения блочного устройства (xfs_growfs / resize2fs).
+#
+# @return 0 при успехе или предупреждении для неподдержанного типа; 1 для неподдержанной ФС
 grow_root_filesystem() {
   local fs_type
   fs_type=$(findmnt -n -o FSTYPE / 2>/dev/null || true)
@@ -102,6 +146,10 @@ grow_root_filesystem() {
   esac
 }
 
+# Заполняет MAIN_DISK: явный MAIN_DISK_DEVICE, иначе диск корня, иначе первый disk из lsblk.
+#
+# @globals MAIN_DISK_DEVICE MAIN_DISK
+# @return 0
 resolve_main_disk() {
   MAIN_DISK="${MAIN_DISK_DEVICE:-}"
   if [[ -z "$MAIN_DISK" ]]; then
@@ -112,6 +160,10 @@ resolve_main_disk() {
   fi
 }
 
+# Вычисляет условный «размер диска в GiB» и группу профиля DISK_SIZE_GROUP (округление).
+#
+# @globals MAIN_DISK DISK_SIZE_G DISK_SIZE_GROUP
+# @return 0
 resolve_disk_size_group() {
   DISK_SIZE_G=""
   if [[ -n "${MAIN_DISK:-}" ]]; then
@@ -129,6 +181,10 @@ resolve_disk_size_group() {
   fi
 }
 
+# Загружает параметры дисков: локальный DISK_VARS_FILE или shallow-клон репозитория.
+#
+# @globals DISK_VARS_FILE DISK_PROFILE_FETCH_FROM_REPO DISK_VARS_REPO_PATH REF_VALUE REPO_URL
+# @return 0
 load_disk_profile() {
   section "Профиль дисков"
   log_info "Основной диск: ${MAIN_DISK:-?}, размер ~${DISK_SIZE_G:-?}G, профиль ${DISK_SIZE_GROUP}G"
@@ -167,6 +223,10 @@ load_disk_profile() {
   rm -rf "${tmp_dir}"
 }
 
+# Задаёт значения по умолчанию для ROOT_TARGET_G, VAR_*, SWAP, MINIO и валидирует числа.
+#
+# @globals ROOT_TARGET_G VAR_MIN_FREE_MIB VAR_SIZE_G SWAP_SIZE_G MINIO_SIZE_G
+# @return 0
 apply_disk_defaults() {
   ROOT_TARGET_G="${ROOT_TARGET_G:-30}"
   VAR_MIN_FREE_MIB="${VAR_MIN_FREE_MIB:-1024}"
@@ -181,6 +241,10 @@ apply_disk_defaults() {
   validate_numeric_profile_var MINIO_SIZE_G 0
 }
 
+# Создаёт файл подкачки /swapfile и подключает swap, если текущего swap мало.
+#
+# @globals SWAP_SIZE_G
+# @return 0
 ensure_swap() {
   section "Swap"
   log_info "Проверка swap (целевой размер ${SWAP_SIZE_G}G)"
@@ -215,6 +279,10 @@ ensure_swap() {
   append_fstab_once "/swapfile  swap  swap  defaults  0  0"
 }
 
+# Расширяет root LV и ФС до ROOT_TARGET_G при наличии свободного места в VG/partition.
+#
+# @globals ROOT_TARGET_G ROOT_LV ROOT_SIZE_G ROOT_VG
+# @return 0 при пропуске или успехе; предупреждения при сбоях growpart/lvm
 expand_root_lv_if_needed() {
   section "Расширение root LV"
 
@@ -254,6 +322,10 @@ expand_root_lv_if_needed() {
   log_info "root LV приведен к ${ROOT_TARGET_G}G (если хватило места в VG)."
 }
 
+# Подбирает диск и диапазон свободного места для выделения /var разделами (не LVM).
+#
+# @globals VAR_ALLOW_ROOT_DISK VAR_DISK_DEVICE ROOT_VG VAR_DISK VAR_FREE_START VAR_FREE_END VAR_MIN_FREE_MIB
+# @return 0 если диск найден, 1 если подходящего нет
 select_target_disk_for_var() {
   VAR_DISK=""
   VAR_FREE_START=""
@@ -272,6 +344,10 @@ select_target_disk_for_var() {
   [[ -n "$root_base_disk" ]] || root_base_disk=$(detect_root_base_disk || true)
   [[ -n "$root_base_disk" ]] && log_info "Определен root-диск: ${root_base_disk}"
 
+  # Внутренняя: проверяет кандидата в диски и достаточность свободного хвоста (MiB).
+  #
+  # @param $1  путь к диску /dev/…
+  # @return 0 если VAR_DISK выбран
   pick_disk() {
     local candidate="$1"
     [[ -n "$candidate" ]] || return 1
@@ -305,6 +381,13 @@ select_target_disk_for_var() {
   return 1
 }
 
+# Создаёт раздел xfs в конце свободного сегмента; возвращает путь к новому разделу.
+#
+# @param $1  диск
+# @param $2  метка раздела (GPT) или primary (MBR)
+# @param $3  требуемый размер в MiB (0 — использовать весь доступный хвост)
+# @stdout путь к новому разделу
+# @return 0 при успехе, 1 при ошибке parted/таблицы
 create_partition_from_free_tail() {
   local disk="$1"
   local part_label="$2"
@@ -350,6 +433,10 @@ create_partition_from_free_tail() {
   echo "$new_part"
 }
 
+# Форматирует раздел в xfs, копирует /var через rsync/cp, монтирует /var, правит fstab.
+#
+# @param $1  путь к блочному устройству раздела
+# @return 0 при успехе, 1 при ошибке mkfs/mount/uuid
 migrate_var_to_partition() {
   local part="$1"
   local var_uuid tmp_mnt
@@ -374,6 +461,11 @@ migrate_var_to_partition() {
   log_info "/var перенесен на ${part} (UUID=${var_uuid})"
 }
 
+# Выделяет раздел на конкретном диске под /minio (отдельные разделы, не LVM).
+#
+# @param $1  диск, на котором после /var остаётся свободное место
+# @globals MINIO_SIZE_G
+# @return 0
 setup_minio_partition() {
   local disk="$1"
   local minio_need_mib minio_part minio_uuid
@@ -405,6 +497,10 @@ setup_minio_partition() {
   log_info "/minio создан на ${minio_part} (UUID=${minio_uuid}, ${MINIO_SIZE_G}G)"
 }
 
+# Заполняет ROOT_LV и ROOT_VG из lvs, если корень на LVM.
+#
+# @globals ROOT_LV ROOT_VG
+# @return 0 если метаданные уже были или успешно прочитаны; 1 если LVM недоступен
 ensure_root_lvm_metadata() {
   if [[ -n "${ROOT_LV:-}" ]] && [[ -n "${ROOT_VG:-}" ]]; then
     return 0
@@ -415,6 +511,10 @@ ensure_root_lvm_metadata() {
   [[ -n "${ROOT_LV:-}" ]] && [[ -n "${ROOT_VG:-}" ]]
 }
 
+# Возвращает целое число гигабайт свободного места в VG.
+#
+# @param $1  имя volume group
+# @stdout свободные GiB (усечённо до целого)
 vg_free_gib() {
   local vg="$1"
   local raw
@@ -422,6 +522,11 @@ vg_free_gib() {
   echo "${raw%%.*}"
 }
 
+# Возвращает путь к LV по имени в VG (/dev/…), если LV существует.
+#
+# @param $1  имя VG
+# @param $2  имя LV
+# @stdout путь lv_path или пусто
 lv_path_by_name() {
   local vg="$1"
   local name="$2"
@@ -431,6 +536,11 @@ lv_path_by_name() {
   lvs --noheadings -o lv_path "${vg}/${name}" 2>/dev/null | tr -d ' '
 }
 
+# Создаёт LV minio в ROOT_VG, xfs, монтирует /minio.
+#
+# @param $1  размер в GiB (по умолчанию MINIO_SIZE_G)
+# @globals ROOT_VG MINIO_SIZE_G
+# @return 0
 setup_minio_lvm() {
   local minio_g="${1:-${MINIO_SIZE_G}}"
   local minio_lv minio_uuid
@@ -462,6 +572,10 @@ setup_minio_lvm() {
   log_info "/minio создан на LV ${minio_lv} (UUID=${minio_uuid}, ${minio_g}G)"
 }
 
+# Вариант с LVM в том же VG, что и root: LV var + опционально minio при VAR_ALLOW_ROOT_DISK=1.
+#
+# @globals VAR_ALLOW_ROOT_DISK ROOT_VG VAR_SIZE_G MINIO_SIZE_G MIN_MINIO_G
+# @return 0 при успехе, 1 при недостатке места или ошибках lvcreate
 prepare_var_and_minio_lvm() {
   local vg_free vg_need var_lv rem minio_g min_minio
 
@@ -528,6 +642,9 @@ prepare_var_and_minio_lvm() {
   return 0
 }
 
+# Сначала пытается разметить /var и /minio отдельными разделами; иначе — вариант LVM.
+#
+# @return 0 (в т.ч. при уже вынесенном /var или при отказе с предупреждением)
 prepare_var_and_minio() {
   section "Разметка /var и /minio"
 
@@ -560,6 +677,9 @@ prepare_var_and_minio() {
   return 0
 }
 
+# Точка входа шага 40: профиль дисков, swap, root LV, /var и /minio.
+#
+# @return 0
 step_disk_storage() {
   resolve_main_disk
   resolve_disk_size_group

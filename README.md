@@ -2,7 +2,16 @@
 
 **Репозиторий:** [https://github.com/andrey-khudoley/infrastructure-public.git](https://github.com/andrey-khudoley/infrastructure-public.git)
 
-Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками, установка коллекций Galaxy через **`run.sh`** из клонированного репо и первый запуск **`ansible-pull`** с тегом `stage1`.
+Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками и запуск в каталоге клона **`make start`** (точка входа в приватном репозитории — **`Makefile`**, цель **`start`**).
+
+## Роль репозиториев
+
+| Репозиторий | Роль |
+|-------------|------|
+| **Этот (public)** | Подготовка хоста: пакеты, диски, SSH для `git`, клон приватного репо в `PULL_DIR`, один вызов **`make start`**, финальный `distro-sync` и проверки. |
+| **Приватный** | Вся прикладная Ansible-логика: цель **`start`** в **`Makefile`** (плейбуки, коллекции, роли и т.д.). |
+
+Публичный сценарий **не** дублирует содержимое приватного **`Makefile`**: он только гарантирует окружение и вызывает **`make start`** с согласованным набором переменных (см. раздел **«Контракт: переменные для `make start`»**).
 
 ## Алгоритм вызова
 
@@ -22,7 +31,22 @@ sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructu
 
 ## Точка входа
 
-Единственный сценарий верхнего уровня — **`start.sh`**: последовательно подключает шаги из `scripts/` и вызывает функции `step_*`. Все примеры ниже предполагают запуск **от root** (или через `sudo bash`).
+Единственный сценарий верхнего уровня — **`start.sh`**: последовательно подключает шаги из `scripts/` и вызывает функции `step_*`. Порядок шагов и назначение задокументированы в **комментариях в начале `start.sh`**. Все примеры ниже предполагают запуск **от root** (или через `sudo bash`).
+
+### Контракт: переменные для `make start`
+
+После успешного клона в **`PULL_DIR`** выполняется **`make start`**. В процесс **make** передаётся такое окружение (имена переменных — часть контракта с приватным репозиторием):
+
+| Переменная | Источник | Назначение |
+|------------|----------|------------|
+| `REPO_URL` | `scripts/lib/env.sh` | URL приватного репозитория (тот же, что для `git clone`). |
+| `REF` | значение **`REF_VALUE`** (берётся из `REF=…` при запуске `start.sh`) | Ветка, тег или коммит; в скриптах после `env.sh` хранится как **`REF_VALUE`**, в **export** для **`make`** — имя **`REF`**, как обычно ожидает приватный **Makefile**. |
+| `ENV` | значение **`ENV_VALUE`** (из `ENV` при запуске) | Логическое окружение (`ctl`, `stage`, `prod`). |
+| `PULL_DIR` | абсолютный путь к клону | Рабочий каталог клона; совпадает с каталогом, из которого вызван **`make start`**. |
+| `GALAXY_*` | см. таблицу ниже | Таймауты и кэш для сценариев с **`ansible-galaxy`** в приватном **Makefile** (если используются). |
+| `COLLECTIONS_REQ` | переменная окружения или по умолчанию `PULL_DIR/collections/requirements.yml` | Путь к `requirements.yml` коллекций. |
+
+Приватный **`Makefile`** может не использовать часть переменных — это нормально; публичный bootstrap всё равно их выставляет для единообразия и обратной совместимости.
 
 ### Репозиторий и окружение Ansible
 
@@ -52,7 +76,7 @@ PULL_DIR=/opt/infra/src ENV=stage REF=main REPO_URL=git@github.com:andrey-khudol
 
 ### Без Ansible (только ОС, диски, пакеты)
 
-Полезно для проверки разметки дисков без клона и `ansible-pull`:
+Полезно для проверки разметки дисков без клона и без **`make start`** в приватном репо:
 
 ```bash
 SKIP_ANSIBLE=1 bash start.sh
@@ -84,7 +108,7 @@ INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infras
 
 ### Galaxy и медленная сеть
 
-Увеличить таймаут и число повторов для `run.sh` / `ansible-galaxy` в приватном репо:
+Переменные **`GALAXY_*`** и **`COLLECTIONS_REQ`** передаются в окружение процесса **`make start`** (если приватный **Makefile** их использует, например для `ansible-galaxy`). Увеличить таймаут и число повторов:
 
 ```bash
 GALAXY_INSTALL_TIMEOUT=600 GALAXY_INSTALL_RETRIES=10 GALAXY_RETRY_SLEEP_SEC=15 \
@@ -124,7 +148,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ```
 ├── README.md
-├── start.sh                 # source scripts/lib/env.sh, common.sh и scripts/NN-*.sh; step_*()
+├── start.sh                 # оркестратор: комментарии в шапке; source lib и scripts/NN-*.sh; step_*()
 ├── scripts/
 │   ├── lib/
 │   │   ├── env.sh           # значения по умолчанию (удобно править под свой хост/репо)
@@ -134,8 +158,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 │   ├── 30-ssh-deploy-key.sh
 │   ├── 40-disk-storage.sh
 │   ├── 50-sync-repository.sh
-│   ├── 60-ansible-collections.sh
-│   ├── 70-ansible-pull-stage1.sh
+│   ├── 70-ansible-pull-stage1.sh   # make start в PULL_DIR
 │   └── 90-finalize.sh
 ```
 
@@ -145,14 +168,14 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
-| `ENV` | `ctl` | Окружение для `ansible-pull`: `ctl`, `stage`, `prod` (передаётся как `-e env=…`). |
-| `REPO_URL` | `https://git.example.com/infra.git` | URL приватного репозитория с плейбуками. |
+| `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make start`**). |
+| `REPO_URL` | см. `scripts/lib/env.sh` (по умолчанию GitHub **infrastructure-private**) | URL приватного репозитория с плейбуками. |
 | `REF` | `main` | Ветка, тег или коммит. |
-| `PULL_DIR` | `/var/lib/infra/src` | Каталог клона и рабочая директория `ansible-pull`. |
-| `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не ставить коллекции, не запускать `ansible-pull`. |
-| `GALAXY_INSTALL_TIMEOUT` | `300` | Таймаут `ansible-galaxy` (сек), прокидывается в `run.sh`. |
-| `GALAXY_DOWNLOAD_DIR` | `/var/lib/infra/galaxy-download` | Кэш скачанных коллекций. |
-| `GALAXY_INSTALL_RETRIES` | `5` | Число повторов сетевых шагов в репо (через `run.sh`). |
+| `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняется **`make start`**. |
+| `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не запускать **`make start`**. |
+| `GALAXY_INSTALL_TIMEOUT` | `300` | Таймаут `ansible-galaxy` (сек), передаётся в окружение **`make start`**. |
+| `GALAXY_DOWNLOAD_DIR` | `/var/lib/infra/galaxy-download` | Кэш скачанных коллекций (для целей приватного **Makefile**). |
+| `GALAXY_INSTALL_RETRIES` | `5` | Число повторов сетевых шагов (окружение **`make start`**). |
 | `GALAXY_RETRY_SLEEP_SEC` | `10` | Пауза между повторами. |
 | `COLLECTIONS_REQ` | *(не задано)* | Если задать, путь к `requirements.yml` для коллекций; иначе `PULL_DIR/collections/requirements.yml`. |
 | `INFRA_SSH_KEY` | `/root/.ssh/id_ed25519_infra` | Ключ для `git@` / `ssh://`. |
@@ -167,14 +190,14 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ## `scripts/lib/env.sh`
 
-Объявляет переменные с значениями по умолчанию (таблица ниже). Подключается из `start.sh` первым.
+Объявляет переменные с значениями по умолчанию (таблица ниже). Подключается из `start.sh` первым. В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
 
 ## Библиотека `scripts/lib/common.sh`
 
 Подключается из `start.sh` после `env.sh`, до пошаговых сценариев. Содержит только то, что используется **несколькими** шагами:
 
 - Логирование: `log_info`, `log_warn`, `log_err`, `section`, `fail`.
-- `has_cmd`, `dnf_install`, `git_repo` (git без интерактивного `credential.helper` для HTTPS).
+- `has_cmd`, `dnf_install`, `git_repo` (git без интерактивного `credential.helper` для HTTPS — см. комментарий в начале файла).
 - `distro_sync_system` — `dnf distro-sync -y`.
 
 Остальная логика лежит в соответствующих файлах `scripts/NN-*.sh` (см. разделы шагов ниже).
@@ -197,7 +220,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 1. Устанавливает базовые пакеты через `dnf`:
    - при **`SKIP_ANSIBLE=1`**: `epel-release`, `git`, `curl`, `parted`;
-   - иначе: `epel-release`, `git`, `curl`, `ansible-core`, `parted`, **`make`** (нужен для `run.sh` → `make install-deps` в приватном репозитории).
+   - иначе: `epel-release`, `git`, `curl`, `ansible-core`, `parted`, **`make`** (нужен для **`make start`** в приватном репозитории).
 
 2. Выполняет **`dnf distro-sync -y`** — выравнивание версий установленных пакетов с репозиториями (в т.ч. после подключения EPEL).
 
@@ -247,48 +270,55 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Реализация: `sync_repository` в `scripts/50-sync-repository.sh`.
 
-### Шаг 60 — `ansible-collections`
-
-**Файл:** `scripts/60-ansible-collections.sh`  
-**Функция:** `step_ansible_collections`
-
-После успешного клона в `PULL_DIR` ожидается приватный репозиторий с **`run.sh`** в корне. Выполняется:
-
-```bash
-cd PULL_DIR
-./run.sh install-deps
-```
-
-В окружение передаются **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`). Установка коллекций (скачивание, кэш, offline install, ретраи) реализована в приватном репозитории через **Makefile** и `scripts/galaxy-offline-install.sh`.
-
-Если **`run.sh`** отсутствует, шаг завершается с ошибкой.
-
-При **`SKIP_ANSIBLE=1`** шаг не выполняется.
-
-### Шаг 70 — `ansible-pull-stage1`
+### Шаг 70 — `ansible-pull-stage1` (вызов `make start`)
 
 **Файл:** `scripts/70-ansible-pull-stage1.sh`  
 **Функция:** `step_ansible_pull_stage1`
 
+Имя файла историческое (раньше здесь вызывался другой сценарий); фактически выполняется только **`make start`**. Подробные комментарии — в **начале `scripts/70-ansible-pull-stage1.sh`** (контракт с приватным репо, зачем subshell, почему **`REF`** в export берётся из **`REF_VALUE`**).
+
 При **`SKIP_ANSIBLE=1`** пропускается.
 
-Иначе вызывается **`run_stage1_ansible_pull`** (`scripts/70-ansible-pull-stage1.sh`):
+Иначе после клона в **`PULL_DIR`** ожидается **`Makefile`** с целью **`start`**. В каталоге клона выполняется:
 
-1. Копируется **`inventories/local.ini`** → **`inventory.pull.ini`** в корне клона (ожидается рабочий инвентарь в приватном репозитории; см. **`ansible.cfg`** в клоне).
-2. Запускается **`ansible-pull`** с URL `REPO_URL`, веткой `REF`, каталогом `PULL_DIR`, инвентарём `inventory.pull.ini`, плейбуком **`bootstrap.yml`**, тегами **`stage1`**, extra vars **`env=ENV_VALUE`**.
+```bash
+cd PULL_DIR
+make start
+```
 
-Для git внутри pull отключается интерактивный `credential.helper`; сбрасывается `ANSIBLE_INVENTORY`, чтобы не ломать инвентарь.
+В окружение процесса передаются **`REPO_URL`**, **`REF`**, **`ENV`**, **`PULL_DIR`**, а также **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`), чтобы приватный **Makefile** мог установить коллекции, вызвать плейбуки и т.д. Полный перечень и смысл — в разделе **«Контракт: переменные для `make start`»** выше.
+
+Если **`Makefile`** отсутствует, шаг завершается с ошибкой.
 
 ### Шаг 90 — `finalize`
 
 **Файл:** `scripts/90-finalize.sh`  
 **Функция:** `step_finalize`
 
-1. Повторный **`dnf distro-sync -y`** после установки пакетов и stage1.
+1. Повторный **`dnf distro-sync -y`** после установки пакетов и **`make start`**.
 2. **`verify_critical_services`** — `sshd -t`, при необходимости проверка **NetworkManager**, если он включён (реализация в `scripts/90-finalize.sh`).
 
 Выводится итоговое сообщение: с `SKIP_ANSIBLE=1` или после полного прохода.
 
 ## Связь с приватным репозиторием
 
-Список коллекций и установка через **Make** живут в приватном репозитории (`collections/requirements.yml`, `run.sh`, `Makefile`). Скрипт **`60-ansible-collections.sh`** после клона вызывает **`./run.sh install-deps`** в каталоге **`PULL_DIR`** (вызов **`./run.sh`** без аргументов в приватном репозитории по умолчанию делает то же — цель **`install-deps`**). Шаг **`70`** вызывает **`./run.sh stage1-pull`** → **`make stage1-pull`** → скрипт **`scripts/stage1-ansible-pull.sh`** внутри клона.
+Точка входа на стороне приватного репозитория — **`Makefile`**, цель **`start`** (например `ansible-playbook …` или цепочка зависимостей с установкой коллекций из `collections/requirements.yml`). Публичный bootstrap после клона в **`PULL_DIR`** один раз выполняет **`make start`**, передавая в окружение **`ENV`**, **`REPO_URL`**, **`REF`**, **`PULL_DIR`** и при необходимости **`GALAXY_*`** / **`COLLECTIONS_REQ`**.
+
+### Что править при изменении контракта
+
+1. **Приватный репо:** цель **`start`**, зависимости и использование переменных окружения.
+2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`**), при необходимости **`scripts/lib/env.sh`** и таблицы в этом **README**.
+3. Сохраняйте согласованность имён: внешний интерфейс для **`make`** — **`REF`** и **`ENV`**, а не **`REF_VALUE`** / **`ENV_VALUE`** (последние — только внутри shell после `env.sh`).
+
+### Комментарии в коде
+
+В номерных файлах **`scripts/NN-*.sh`** перед функциями используются блоки в духе **JSDoc**: краткое описание, теги **`@param`** (аргументы **`$1`**, …), **`@globals`**, при необходимости **`@stdout`** / **`@return`** / **`@exit`**. Это упрощает навигацию по длинному шагу **40** и единообразно документирует остальные шаги.
+
+Подробные пояснения по сценарию находятся в:
+
+- **`start.sh`** — порядок шагов и ограничения запуска;
+- **`scripts/lib/env.sh`** — группы переменных и шаги;
+- **`scripts/lib/common.sh`** — поведение **`git_repo`**;
+- **`scripts/10-require-runtime.sh`** … **`scripts/50-sync-repository.sh`**, **`scripts/90-finalize.sh`** — шапка файла и JSDoc у **`step_*`** и вспомогательных функций;
+- **`scripts/40-disk-storage.sh`** — шапка файла и JSDoc у каждой функции (включая вложенную **`pick_disk`**);
+- **`scripts/70-ansible-pull-stage1.sh`** — контракт **`make start`**, связка **`REF`** / **`REF_VALUE`**, историческое имя файла, JSDoc у **`run_stage1_ansible_pull`** / **`step_ansible_pull_stage1`**.

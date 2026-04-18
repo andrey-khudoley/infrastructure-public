@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
-# Цепочка подготовки хоста: ОС и диски → репозиторий → run.sh install-deps → run.sh stage1-pull (make в клоне).
-# См. README.md.
+#
+# Bootstrap-хоста под инфраструктурный Ansible (публичный репозиторий).
+#
+# Назначение:
+#   Один сценарий верхнего уровня: подготовка ОС (dnf, диски, SSH-ключ для git),
+#   клон приватного репозитория с плейбуками в PULL_DIR и единственная точка
+#   входа в прикладную логику — «make start» внутри клона (см. приватный Makefile).
+#
+# Порядок шагов (не менять без обновления README и зависимостей между шагами):
+#   10  root/dnf/утилиты
+#   20  пакеты (+ ansible-core и make, если не SKIP_ANSIBLE)
+#   30  deploy key для SSH-URL приватного репо
+#   40  диски, swap, при необходимости /var и /minio
+#   50  git clone/fetch в PULL_DIR
+#   70  make start в PULL_DIR (контракт с приватным репо)
+#   90  distro-sync и проверка sshd / NetworkManager
+#
+# Конфигурация:
+#   Переменные по умолчанию — scripts/lib/env.sh; переопределение — через окружение
+#   перед запуском: ENV=stage REF=main REPO_URL=... bash start.sh
+#
+# Ограничение:
+#   Скрипт должен запускаться из каталога клона этого репозитория (нужны scripts/).
+#   Запуск через «curl … | bash» не поддерживается — не определяется ROOT.
+#
+# Подробности: README.md
 
 set -euo pipefail
 
@@ -20,8 +44,6 @@ source "${ROOT}/scripts/30-ssh-deploy-key.sh"
 source "${ROOT}/scripts/40-disk-storage.sh"
 # shellcheck source=scripts/50-sync-repository.sh
 source "${ROOT}/scripts/50-sync-repository.sh"
-# shellcheck source=scripts/60-ansible-collections.sh
-source "${ROOT}/scripts/60-ansible-collections.sh"
 # shellcheck source=scripts/70-ansible-pull-stage1.sh
 source "${ROOT}/scripts/70-ansible-pull-stage1.sh"
 # shellcheck source=scripts/90-finalize.sh
@@ -32,6 +54,5 @@ step_install_packages
 step_ssh_deploy_key
 step_disk_storage
 step_sync_repository
-step_ansible_collections
 step_ansible_pull_stage1
 step_finalize

@@ -1,6 +1,13 @@
 # shellcheck shell=bash
-# Клон или fetch основного репозитория в PULL_DIR.
+#
+# Шаг 50 — приватный репозиторий с плейбуками в PULL_DIR.
+# Если каталог уже есть — fetch + checkout на REF_VALUE; иначе clone -b REF_VALUE.
+# Перед шагом 70 в корне клона должен появиться Makefile (цель start) — это проверяется в 70.
 
+# Синхронизирует клон приватного репозитория: clone или fetch/checkout.
+#
+# @globals REPO_URL REF_VALUE PULL_DIR
+# @return 0 при успехе git-операций
 sync_repository() {
   section "Репозиторий"
   log_info "Синхронизация ${REPO_URL} (${REF_VALUE}) -> ${PULL_DIR}"
@@ -26,6 +33,10 @@ sync_repository() {
   fi
 }
 
+# Обёртка шага 50 с учётом SKIP_ANSIBLE.
+#
+# @globals SKIP_ANSIBLE
+# @return 0; при SKIP_ANSIBLE=1 — ранний выход без clone
 step_sync_repository() {
   if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
     log_info "SKIP_ANSIBLE=1: синхронизация репозитория пропущена."
