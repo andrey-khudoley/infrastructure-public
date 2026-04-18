@@ -2,7 +2,7 @@
 # Параметры запуска (по умолчанию). Подключается из start.sh.
 
 ENV_VALUE="${ENV:-ctl}"                                    # ctl|stage|prod
-REPO_URL="${REPO_URL:-https://git.example.com/infra.git}"
+REPO_URL="${REPO_URL:-https://github.com/andrey-khudoley/infrastructure-private.git}"
 REF_VALUE="${REF:-main}"
 PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"
 SKIP_ANSIBLE="${SKIP_ANSIBLE:-0}"

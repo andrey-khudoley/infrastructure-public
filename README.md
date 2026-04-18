@@ -289,7 +289,7 @@ cd PULL_DIR
 
 Иначе вызывается **`run_stage1_ansible_pull`** (`scripts/lib/ansible.sh`):
 
-1. Копируется `inventory.ini` → `inventory.pull.ini` (без лишних алиасов хостов).
+1. Копируется **`inventories/local.ini`** → **`inventory.pull.ini`** в корне клона (ожидается рабочий инвентарь в приватном репозитории; см. **`ansible.cfg`** в клоне).
 2. Запускается **`ansible-pull`** с URL `REPO_URL`, веткой `REF`, каталогом `PULL_DIR`, инвентарём `inventory.pull.ini`, плейбуком **`bootstrap.yml`**, тегами **`stage1`**, extra vars **`env=ENV_VALUE`**.
 
 Для git внутри pull отключается интерактивный `credential.helper`; сбрасывается `ANSIBLE_INVENTORY`, чтобы не ломать инвентарь.
@@ -306,4 +306,4 @@ cd PULL_DIR
 
 ## Связь с приватным репозиторием
 
-Список коллекций и установка через **Make** живут в приватном репозитории (`collections/requirements.yml`, `run.sh`, `Makefile`). Скрипт `60-ansible-collections.sh` после клона вызывает `./run.sh install-deps` в каталоге `PULL_DIR`.
+Список коллекций и установка через **Make** живут в приватном репозитории (`collections/requirements.yml`, `run.sh`, `Makefile`). Скрипт **`60-ansible-collections.sh`** после клона вызывает **`./run.sh install-deps`** в каталоге **`PULL_DIR`** (вызов **`./run.sh`** без аргументов в приватном репозитории по умолчанию делает то же — цель **`install-deps`**). Шаг **`70`** вызывает **`./run.sh stage1-pull`** → **`make stage1-pull`** → скрипт **`scripts/stage1-ansible-pull.sh`** внутри клона.
