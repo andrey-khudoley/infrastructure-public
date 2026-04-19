@@ -3,20 +3,28 @@
 # Шаг 30 — при необходимости приведение github.com HTTPS в REPO_URL к git@…, затем SSH-ключ (deploy key).
 # Если после этого REPO_URL остаётся HTTPS, ключ не создаётся (токен/credential helper для git).
 
-# Проверяет, требуется ли SSH для текущего REPO_URL.
+# Проверяет, является ли строка SSH-URL для git (git@… или ssh://…).
 #
-# @globals REPO_URL
-# @return 0 если URL — git@… или ssh://… (нужен ключ); иначе 1
-repo_url_is_ssh() {
-  [[ "${REPO_URL}" == git@* ]] || [[ "${REPO_URL}" == ssh://* ]]
+# @param $1 URL
+_url_is_ssh() {
+  [[ -n "$1" ]] && { [[ "$1" == git@* ]] || [[ "$1" == ssh://* ]]; }
+}
+
+# Нужен ли deploy key: SSH используется для приватного и/или публичного репозитория.
+#
+# @globals REPO_URL PUBLIC_REPO_URL
+infra_repos_need_ssh() {
+  _url_is_ssh "${REPO_URL}" && return 0
+  _url_is_ssh "${PUBLIC_REPO_URL:-}" && return 0
+  return 1
 }
 
 # Создаёт при необходимости deploy key и выставляет GIT_SSH_COMMAND для последующих git вызовов.
 #
-# @globals REPO_URL INFRA_SSH_KEY INFRA_SSH_KEY_COMMENT INFRA_SSH_SKIP_PROMPT
-# @return 0 если URL не SSH или ключ готов; иначе интерактивная пауза до Enter
+# @globals REPO_URL PUBLIC_REPO_URL INFRA_SSH_KEY INFRA_SSH_KEY_COMMENT INFRA_SSH_SKIP_PROMPT
+# @return 0 если SSH не нужен или ключ готов; иначе интерактивная пауза до Enter
 ensure_infra_deploy_key() {
-  repo_url_is_ssh || return 0
+  infra_repos_need_ssh || return 0
 
   section "SSH-ключ для репозитория (deploy key)"
   if ! has_cmd ssh-keygen; then
@@ -44,10 +52,19 @@ ensure_infra_deploy_key() {
   export GIT_SSH_COMMAND="ssh -i \"${INFRA_SSH_KEY}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 }
 
+# Нормализация github.com HTTPS → git@… и подготовка deploy key (как для start.sh, так и для update.sh).
+#
+# @globals REPO_URL PUBLIC_REPO_URL
+# @return 0
+prepare_ssh_for_infra_repos() {
+  normalize_github_https_repo_url
+  normalize_github_https_var_to_ssh PUBLIC_REPO_URL
+  ensure_infra_deploy_key
+}
+
 # Точка входа шага 30 для start.sh.
 #
 # @return 0
 step_ssh_deploy_key() {
-  normalize_github_https_repo_url
-  ensure_infra_deploy_key
+  prepare_ssh_for_infra_repos
 }
