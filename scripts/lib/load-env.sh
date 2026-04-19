@@ -49,6 +49,7 @@ _infra_load_env_file "${_ENV_FILE}"
 # Нормализация для шагов: внешний интерфейс — ENV и REF, внутри скриптов — *_VALUE
 ENV_VALUE="${ENV:-ctl}"
 REF_VALUE="${REF:-main}"
+PUBLIC_REF_VALUE="${PUBLIC_REF:-main}"
 
 unset -f _infra_load_env_file
 unset _REPO_ROOT _ENV_FILE
