@@ -225,7 +225,7 @@ load_disk_profile() {
 
 # Задаёт значения по умолчанию для ROOT_TARGET_G, VAR_*, SWAP, MINIO и валидирует числа.
 #
-# @globals ROOT_TARGET_G VAR_MIN_FREE_MIB VAR_SIZE_G SWAP_SIZE_G MINIO_SIZE_G
+# @globals ROOT_TARGET_G VAR_MIN_FREE_MIB VAR_SIZE_G SWAP_SIZE_G MINIO_SIZE_G VAR_ALLOW_ROOT_DISK
 # @return 0
 apply_disk_defaults() {
   ROOT_TARGET_G="${ROOT_TARGET_G:-30}"
@@ -239,6 +239,35 @@ apply_disk_defaults() {
   validate_numeric_profile_var VAR_SIZE_G 15
   validate_numeric_profile_var SWAP_SIZE_G 2
   validate_numeric_profile_var MINIO_SIZE_G 0
+
+  VAR_ALLOW_ROOT_DISK="${VAR_ALLOW_ROOT_DISK:-1}"
+}
+
+# Перед разметкой на диске с корнем при VAR_ALLOW_ROOT_DISK=1 — предупреждение и один раз Enter.
+#
+# @param $1  краткий контекст (диск, LVM и т.п.)
+# @globals VAR_ALLOW_ROOT_DISK VAR_ALLOW_ROOT_DISK_SKIP_PROMPT _INFRA_ALLOW_ROOT_DISK_ACK
+# @return 0
+confirm_allow_root_disk_once() {
+  local ctx="${1:-}"
+  [[ "${VAR_ALLOW_ROOT_DISK:-1}" == "1" ]] || return 0
+  [[ "${_INFRA_ALLOW_ROOT_DISK_ACK:-0}" == "1" ]] && return 0
+
+  if [[ "${VAR_ALLOW_ROOT_DISK_SKIP_PROMPT:-0}" == "1" ]]; then
+    log_warn "VAR_ALLOW_ROOT_DISK_SKIP_PROMPT=1: подтверждение разметки на диске с корнем пропущено.${ctx:+ ${ctx}}"
+    _INFRA_ALLOW_ROOT_DISK_ACK=1
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    log_warn "stdin не TTY: подтверждение разметки на диске с корнем пропущено.${ctx:+ ${ctx}}"
+    _INFRA_ALLOW_ROOT_DISK_ACK=1
+    return 0
+  fi
+
+  log_warn "ВНИМАНИЕ: будет разметка на диске с корневой файловой системой (VAR_ALLOW_ROOT_DISK=1). Риск потери данных при ошибке.${ctx:+ ${ctx}}"
+  log_warn "Нажмите Enter для продолжения или Ctrl+C для отмены."
+  read -r _ || true
+  _INFRA_ALLOW_ROOT_DISK_ACK=1
 }
 
 # Создаёт файл подкачки /swapfile и подключает swap, если текущего swap мало.
@@ -332,7 +361,7 @@ select_target_disk_for_var() {
   VAR_FREE_END=""
 
   local allow_root_disk var_disk_device root_base_disk disk free_triplet free_start free_end free_size
-  allow_root_disk="${VAR_ALLOW_ROOT_DISK:-0}"
+  allow_root_disk="${VAR_ALLOW_ROOT_DISK:-1}"
   var_disk_device="${VAR_DISK_DEVICE:-}"
   root_base_disk=""
 
@@ -353,13 +382,16 @@ select_target_disk_for_var() {
     [[ -n "$candidate" ]] || return 1
     [[ "$(lsblk -dnpo TYPE "$candidate" 2>/dev/null || true)" == "disk" ]] || return 1
     if [[ "$allow_root_disk" != "1" ]] && [[ -n "$root_base_disk" ]] && [[ "$candidate" == "$root_base_disk" ]]; then
-      log_warn "Пропускаем root-диск ${candidate}. Для override используйте VAR_ALLOW_ROOT_DISK=1."
+      log_warn "Пропускаем root-диск ${candidate} (VAR_ALLOW_ROOT_DISK=0)."
       return 1
     fi
     free_triplet=$(get_last_free_segment_mib "$candidate" || true)
     [[ -n "$free_triplet" ]] || return 1
     read -r free_start free_end free_size <<< "$free_triplet"
     if [[ "$free_size" -ge "$VAR_MIN_FREE_MIB" ]]; then
+      if [[ "$allow_root_disk" == "1" ]] && [[ -n "$root_base_disk" ]] && [[ "$candidate" == "$root_base_disk" ]]; then
+        confirm_allow_root_disk_once "Диск ${candidate}: новые разделы в свободном хвосте."
+      fi
       VAR_DISK="$candidate"
       VAR_FREE_START="$free_start"
       VAR_FREE_END="$free_end"
@@ -579,8 +611,8 @@ setup_minio_lvm() {
 prepare_var_and_minio_lvm() {
   local vg_free vg_need var_lv rem minio_g min_minio
 
-  if [[ "${VAR_ALLOW_ROOT_DISK:-0}" != "1" ]]; then
-    log_warn "LVM: выделение /var и /minio в VG отключено (нужен VAR_ALLOW_ROOT_DISK=1)."
+  if [[ "${VAR_ALLOW_ROOT_DISK:-1}" != "1" ]]; then
+    log_warn "LVM: выделение /var и /minio в VG отключено (VAR_ALLOW_ROOT_DISK=0)."
     return 1
   fi
 
@@ -625,6 +657,8 @@ prepare_var_and_minio_lvm() {
   fi
 
   log_info "LVM: VG=${ROOT_VG}, свободно ~${vg_free}G, план: /var ${VAR_SIZE_G}G, /minio ${minio_g}G"
+
+  confirm_allow_root_disk_once "LVM: VG ${ROOT_VG}, LV var и при необходимости minio на диске с корнем."
 
   var_lv=$(lv_path_by_name "${ROOT_VG}" "var")
   if [[ -z "${var_lv}" ]]; then

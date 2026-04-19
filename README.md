@@ -111,10 +111,10 @@ SKIP_ANSIBLE=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-
 
 ### Диски: `/var`, `/minio`, LVM
 
-Выделение `/var` и при необходимости `/minio` из свободного места в VG на том же диске, что и root (нужно явное разрешение):
+По умолчанию разрешена разметка на диске с root (**`VAR_ALLOW_ROOT_DISK=1`**). Перед созданием разделов или LV на этом диске скрипт выводит предупреждение и ждёт нажатия Enter. Отключить (только отдельные диски): **`VAR_ALLOW_ROOT_DISK=0`**. Для CI и неинтерактивного запуска: **`VAR_ALLOW_ROOT_DISK_SKIP_PROMPT=1`**.
 
 ```bash
-VAR_ALLOW_ROOT_DISK=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
+ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
 ### SSH deploy key и автоматизация
@@ -207,8 +207,10 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 | `DISK_VARS_REPO_PATH` | `bootstrap-disk.env` | Путь к файлу профиля внутри репозитория. |
 | `DISK_PROFILE_FETCH_FROM_REPO` | `1` | Подтянуть профиль дисков из репо, если локального файла нет. |
 | `MAIN_DISK_DEVICE` | *(пусто)* | Принудительно указать основной диск для расчёта профиля. |
+| `VAR_ALLOW_ROOT_DISK` | `1` | Разрешить разметку на диске с корнем (разделы в хвосте или LV в VG root). При фактическом использовании — предупреждение и ожидание Enter. `0` — не трогать root-диск. |
+| `VAR_ALLOW_ROOT_DISK_SKIP_PROMPT` | `0` | При `1` — не ждать Enter после предупреждения о разметке root-диска (автоматизация). |
 
-Дополнительно для разметки дисков (часто задаются в `bootstrap-disk.env`): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_ALLOW_ROOT_DISK`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — см. раздел **«Шаг 40 — disk-storage»** ниже.
+Дополнительно для разметки дисков (часто задаются в `bootstrap-disk.env`): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — см. раздел **«Шаг 40 — disk-storage»** ниже.
 
 ## `scripts/lib/load-env.sh`
 
@@ -278,7 +280,9 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 5. **`expand_root_lv_if_needed`** — расширение root LV при LVM и свободном месте.
 6. **`prepare_var_and_minio`** — перенос `/var` на отдельный раздел или LV и при необходимости создание `/minio`.
 
-Параметры (в т.ч. `VAR_ALLOW_ROOT_DISK`, `VAR_SIZE_G`, `MINIO_SIZE_G`) задаются в профиле дисков или через переменные окружения — см. таблицу **«Переменные окружения»** выше.
+Перед разметкой на диске с корнем при **`VAR_ALLOW_ROOT_DISK=1`** (значение по умолчанию) выводится предупреждение и ожидается Enter, если не задано **`VAR_ALLOW_ROOT_DISK_SKIP_PROMPT=1`** и stdin — TTY.
+
+Параметры (в т.ч. `VAR_SIZE_G`, `MINIO_SIZE_G`) задаются в профиле дисков или через переменные окружения — см. таблицу **«Переменные окружения»** выше.
 
 Детали реализации — в `scripts/40-disk-storage.sh`.
 
