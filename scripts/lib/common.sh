@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 #
-# Общие утилиты для шагов start.sh (подключается сразу после env.sh).
+# Общие утилиты для шагов start.sh (подключается сразу после load-env.sh).
 #
 # git_repo — обёртка над git с отключённым credential.helper, чтобы clone/fetch по HTTPS
 # не блокировались интерактивным запросом пароля в неинтерактивном bootstrap.

@@ -18,8 +18,9 @@
 #   90  distro-sync и проверка sshd / NetworkManager
 #
 # Конфигурация:
-#   Переменные по умолчанию — scripts/lib/env.sh; переопределение — через окружение
-#   перед запуском: ENV=stage REF=main REPO_URL=... bash start.sh
+#   Корневой .env (см. scripts/lib/load-env.sh) — единственный файл настроек.
+#   Переопределение — переменными окружения перед запуском:
+#   ENV=stage REF=main REPO_URL=... bash start.sh
 #
 # Ограничение:
 #   Скрипт должен запускаться из каталога клона этого репозитория (нужны scripts/).
@@ -31,8 +32,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=scripts/lib/env.sh
-source "${ROOT}/scripts/lib/env.sh"
+# shellcheck source=scripts/lib/load-env.sh
+source "${ROOT}/scripts/lib/load-env.sh"
 # shellcheck source=scripts/lib/common.sh
 source "${ROOT}/scripts/lib/common.sh"
 # shellcheck source=scripts/10-require-runtime.sh

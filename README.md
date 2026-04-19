@@ -16,10 +16,10 @@
 ## Алгоритм вызова
 
 1. **Склонировать этот репозиторий целиком** (нужны `start.sh` и каталог `scripts/` с библиотеками и шагами; одного `start.sh` недостаточно).
-2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`.
+2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`. При необходимости отредактировать **`.env`** в корне (единственный файл настроек: `ENV`, `REPO_URL`, `REF` и остальное из таблицы ниже).
 3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
 
-Минимальный пример с **дефолтами из `scripts/lib/env.sh`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **30** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
+Минимальный пример с **дефолтами из `.env`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **30** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
 
 ```bash
 git clone https://github.com/andrey-khudoley/infrastructure-public.git
@@ -54,8 +54,8 @@ make -C "${PULL_DIR}" bootstrap
 
 | Переменная | Источник | Назначение |
 |------------|----------|------------|
-| `REPO_URL` | `scripts/lib/env.sh` | URL приватного репозитория (тот же, что для `git clone`). |
-| `REF` | значение **`REF_VALUE`** (берётся из `REF=…` при запуске `start.sh`) | Ветка, тег или коммит; в скриптах после `env.sh` хранится как **`REF_VALUE`**, в **export** для **`make`** — имя **`REF`**, как ожидает приватный **Makefile**. |
+| `REPO_URL` | **`.env`** (если не переопределён окружением) | URL приватного репозитория (тот же, что для `git clone`). |
+| `REF` | значение **`REF_VALUE`** (из `REF=…` при запуске и/или из **`.env`**) | Ветка, тег или коммит; в скриптах после **`load-env.sh`** хранится как **`REF_VALUE`**, в **export** для **`make`** — имя **`REF`**, как ожидает приватный **Makefile**. |
 | `ENV` | значение **`ENV_VALUE`** (из `ENV` при запуске) | Логическое окружение (`ctl`, `stage`, `prod`); выбирает `vars/{{ env }}.yml` на стороне приватного репо. |
 | `PULL_DIR` | абсолютный путь к клону | Рабочий каталог клона; совпадает с каталогом, из которого выполняются цели make. |
 | `GALAXY_*` | см. таблицу ниже | Таймауты, ретраи и каталог кэша для `scripts/galaxy-offline-install.sh` (используется целью `install-deps`). |
@@ -65,7 +65,7 @@ make -C "${PULL_DIR}" bootstrap
 
 ### Репозиторий и окружение Ansible
 
-Базовый запуск: ветка `main`, окружение `stage`, **`REPO_URL`** из **`env.sh`** (HTTPS на `github.com` обрабатывается в начале шага **30**). Для другого хоста (не `github.com`) или нестандартного URL задайте **`REPO_URL`** сразу как **`git@…`** или **`ssh://…`** (см. шаг **30**):
+Базовый запуск: ветка `main`, окружение `stage`, **`REPO_URL`** из **`.env`** (HTTPS на `github.com` обрабатывается в начале шага **30**). Для другого хоста (не `github.com`) или нестандартного URL задайте **`REPO_URL`** сразу как **`git@…`** или **`ssh://…`** (см. шаг **30**):
 
 ```bash
 ENV=stage REF=main bash start.sh
@@ -169,10 +169,11 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ```
 ├── README.md
+├── .env                     # обязательный файл настроек (коммитится; см. комментарии в файле)
 ├── start.sh                 # оркестратор: комментарии в шапке; source lib и scripts/NN-*.sh; step_*()
 ├── scripts/
 │   ├── lib/
-│   │   ├── env.sh           # значения по умолчанию (удобно править под свой хост/репо)
+│   │   ├── load-env.sh      # обязательный корневой .env; нормализация ENV_VALUE/REF_VALUE
 │   │   └── common.sh        # логирование, dnf, git, distro-sync (общее для шагов)
 │   ├── 10-require-runtime.sh
 │   ├── 20-install-packages.sh
@@ -185,12 +186,12 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ## Переменные окружения
 
-Значения по умолчанию задаются в `scripts/lib/env.sh` (можно отредактировать файл в клоне под постоянные настройки) и при необходимости переопределяются переменными окружения перед запуском `start.sh`.
+Приоритет: **переменные окружения** (в т.ч. `sudo env KEY=…`) **>** строки в **`.env`** в корне клона. Файл **`.env`** обязателен (входит в репозиторий); секреты туда не кладём.
 
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
 | `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make install-deps`** / **`make bootstrap`**). |
-| `REPO_URL` | в **`env.sh`** по умолчанию HTTPS на `github.com/…`; в шаге **30** такой URL приводится к **`git@github.com:…`**. Итоговый URL — тот же, что для `git clone`. Там же готовится deploy key для `git@…` / `ssh://…`. Другой хост или клон строго по HTTPS — задайте URL вручную (для HTTPS без конвертации нужны учётные данные git). |
+| `REPO_URL` | в **`.env`** по умолчанию HTTPS на `github.com/…`; в шаге **30** такой URL приводится к **`git@github.com:…`**. Итоговый URL — тот же, что для `git clone`. Там же готовится deploy key для `git@…` / `ssh://…`. Другой хост или клон строго по HTTPS — задайте URL вручную (для HTTPS без конвертации нужны учётные данные git). |
 | `REF` | `main` | Ветка, тег или коммит. |
 | `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняются **`make install-deps`** и **`make bootstrap`**. |
 | `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не запускать **`make install-deps`** / **`make bootstrap`**. |
@@ -209,13 +210,13 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Дополнительно для разметки дисков (часто задаются в `bootstrap-disk.env`): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_ALLOW_ROOT_DISK`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — см. раздел **«Шаг 40 — disk-storage»** ниже.
 
-## `scripts/lib/env.sh`
+## `scripts/lib/load-env.sh`
 
-Объявляет только значения по умолчанию (см. таблицу **«Переменные окружения»** выше), без преобразований URL. Подключается из `start.sh` первым. Приведение **`https://github.com/…`** к **`git@…`** выполняется в шаге **30** (`normalize_github_https_repo_url` в **`scripts/lib/common.sh`**). В файле есть **пошаговые комментарии** (какие переменные относятся к шагам 30, 40, 50, 70) и пояснение имён **`ENV_VALUE`** / **`REF_VALUE`**.
+Читает обязательный корневой **`.env`** и выставляет только те переменные, которые ещё не заданы в окружении процесса. Затем задаёт **`ENV_VALUE`** и **`REF_VALUE`** из **`ENV`** и **`REF`** (с запасными значениями `ctl` и `main`). Преобразований URL здесь нет: приведение **`https://github.com/…`** к **`git@…`** выполняется в шаге **30** (`normalize_github_https_repo_url` в **`scripts/lib/common.sh`**). Пояснения к переменным и шагам — в комментариях в **`.env`** и в номерных скриптах **`scripts/NN-*.sh`**.
 
 ## Библиотека `scripts/lib/common.sh`
 
-Подключается из `start.sh` после `env.sh`, до пошаговых сценариев. Содержит то, что используется **несколькими** шагами:
+Подключается из `start.sh` после `load-env.sh`, до пошаговых сценариев. Содержит то, что используется **несколькими** шагами:
 
 - Логирование: `log_info`, `log_warn`, `log_err`, `section`, `fail`.
 - `has_cmd`, `dnf_install`, `git_repo` (git без интерактивного `credential.helper` для HTTPS — см. комментарий в начале файла).
@@ -332,8 +333,8 @@ make bootstrap       # stage1 единого playbooks/site.yml
 ### Что править при изменении контракта
 
 1. **Приватный репо:** цели **`install-deps`** и **`bootstrap`** в **`Makefile`**, теги в **`playbooks/site.yml`**, использование переменных окружения.
-2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`** и последовательность `make`-целей), при изменении **`REPO_URL`** — **`normalize_github_https_repo_url`** в **`scripts/lib/common.sh`**, **`scripts/lib/env.sh`**, таблицы в этом **README**.
-3. Сохраняйте согласованность имён: внешний интерфейс для **`make`** — **`REF`** и **`ENV`**, а не **`REF_VALUE`** / **`ENV_VALUE`** (последние — только внутри shell после `env.sh`).
+2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`** и последовательность `make`-целей), при изменении **`REPO_URL`** — **`normalize_github_https_repo_url`** в **`scripts/lib/common.sh`**, дефолт **`REPO_URL`** в **`.env`**, таблицы в этом **README**.
+3. Сохраняйте согласованность имён: внешний интерфейс для **`make`** — **`REF`** и **`ENV`**, а не **`REF_VALUE`** / **`ENV_VALUE`** (последние — только внутри shell после **`load-env.sh`**).
 
 ### Комментарии в коде
 
@@ -342,7 +343,7 @@ make bootstrap       # stage1 единого playbooks/site.yml
 Подробные пояснения по сценарию находятся в:
 
 - **`start.sh`** — порядок шагов и ограничения запуска;
-- **`scripts/lib/env.sh`** — значения по умолчанию переменных;
+- **`.env`**, **`scripts/lib/load-env.sh`** — корневой конфиг и загрузка переменных;
 - **`scripts/lib/common.sh`** — **`git_repo`**, **`normalize_github_https_repo_url`**, **`dnf_install`**;
 - **`scripts/10-require-runtime.sh`** … **`scripts/50-sync-repository.sh`**, **`scripts/90-finalize.sh`** — шапка файла и JSDoc у **`step_*`** и вспомогательных функций;
 - **`scripts/40-disk-storage.sh`** — шапка файла и JSDoc у каждой функции (включая вложенную **`pick_disk`**);
