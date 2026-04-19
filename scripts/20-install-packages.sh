@@ -2,7 +2,8 @@
 #
 # Шаг 20 — базовые пакеты и выравнивание репозиториев (distro-sync).
 # При SKIP_ANSIBLE=1 не ставим ansible-core и make — только то, что нужно для git/дисков.
-# Иначе: ansible-core для ansible-playbook в приватном репо, make — для «make start».
+# Иначе: ansible-core для ansible-playbook в приватном репо, make — для целей
+# «install-deps» и «bootstrap» приватного Makefile.
 
 # Устанавливает пакеты через dnf в зависимости от SKIP_ANSIBLE, затем выводит секцию в лог.
 #

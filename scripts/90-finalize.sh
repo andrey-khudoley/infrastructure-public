@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
-# Шаг 90 — после пакетов и «make start» повторный distro-sync и смоук-тесты критичных сервисов,
-# чтобы выявить поломанные зависимости до потери доступа по SSH.
+# Шаг 90 — после пакетов и «make install-deps» + «make bootstrap» повторный distro-sync
+# и смоук-тесты критичных сервисов, чтобы выявить поломанные зависимости до потери доступа по SSH.
 
 # Проверяет конфигурацию sshd и доступность сервиса после обновлений пакетов.
 #
@@ -62,8 +62,8 @@ step_finalize() {
 
   section "Готово"
   if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    log_info "Bootstrap завершён (без make start в приватном репо)."
+    log_info "Bootstrap завершён (без make install-deps/bootstrap в приватном репо)."
   else
-    log_info "Приватный репозиторий: make start выполнен успешно."
+    log_info "Приватный репозиторий: make install-deps + make bootstrap выполнены успешно."
   fi
 }

@@ -12,11 +12,11 @@
 # См. README.md — таблица переменных и примеры вызова.
 
 # --- Приватный репозиторий и ref (шаг 50, 70) ---
-ENV_VALUE="${ENV:-ctl}"                                    # ctl | stage | prod → export ENV для make start
+ENV_VALUE="${ENV:-ctl}"                                    # ctl | stage | prod → export ENV для make install-deps/bootstrap
 REPO_URL="${REPO_URL:-https://github.com/andrey-khudoley/infrastructure-private.git}"
 REF_VALUE="${REF:-main}"                                   # ветка, тег или коммит для git и для export REF=
-PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"                  # каталог клона; рабочая директория для make start
-SKIP_ANSIBLE="${SKIP_ANSIBLE:-0}"                          # 1 — без клона и без make start (только ОС/диски)
+PULL_DIR="${PULL_DIR:-/var/lib/infra/src}"                  # каталог клона; рабочая директория для make install-deps/bootstrap
+SKIP_ANSIBLE="${SKIP_ANSIBLE:-0}"                          # 1 — без клона и без make install-deps/bootstrap (только ОС/диски)
 
 # --- Опции для ansible-galaxy / Makefile в приватном репо (прокидываются в шаге 70) ---
 GALAXY_INSTALL_TIMEOUT="${GALAXY_INSTALL_TIMEOUT:-300}"

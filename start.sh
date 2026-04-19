@@ -4,8 +4,9 @@
 #
 # Назначение:
 #   Один сценарий верхнего уровня: подготовка ОС (dnf, диски, SSH-ключ для git),
-#   клон приватного репозитория с плейбуками в PULL_DIR и единственная точка
-#   входа в прикладную логику — «make start» внутри клона (см. приватный Makefile).
+#   клон приватного репозитория с плейбуками в PULL_DIR и вход в прикладную
+#   логику через две цели Make внутри клона — «make install-deps» (коллекции
+#   Ansible Galaxy) и «make bootstrap» (фаза stage1 единого playbooks/site.yml).
 #
 # Порядок шагов (не менять без обновления README и зависимостей между шагами):
 #   10  root/dnf/утилиты
@@ -13,7 +14,7 @@
 #   30  github.com HTTPS → git@… при необходимости; deploy key для SSH-URL приватного репо
 #   40  диски, swap, при необходимости /var и /minio
 #   50  git clone/fetch в PULL_DIR
-#   70  make start в PULL_DIR (контракт с приватным репо)
+#   70  make install-deps + make bootstrap в PULL_DIR (контракт с приватным репо)
 #   90  distro-sync и проверка sshd / NetworkManager
 #
 # Конфигурация:
