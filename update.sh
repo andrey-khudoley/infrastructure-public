@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Обновление клона публичного репозитория и синхронизация приватного (только git).
-# Ansible, make и start.sh не вызываются.
+# После pull приватного клона — make apply-infra-units (ansible-pull.env + systemd), если есть .venv.
 #
 # Запуск из корня клона infrastructure-public (рядом с этим файлом):
 #   sudo bash update.sh
@@ -51,5 +51,27 @@ sync_public_repository() {
 
 sync_public_repository
 sync_repository
+
+# Миграция юнитов на узле после обновления клона приватного репозитория (тег infra_units).
+apply_infra_units_if_ready() {
+  section "Приватный репозиторий: миграция systemd / ansible-pull.env"
+  local mk="${PULL_DIR}/Makefile"
+  local pb="${PULL_DIR}/.venv/bin/ansible-playbook"
+  if [[ ! -f "${mk}" ]]; then
+    log_info "Нет ${mk} — пропуск make apply-infra-units."
+    return 0
+  fi
+  if [[ ! -x "${pb}" ]]; then
+    log_warn "Нет исполняемого ${pb} — выполните в клоне: make install-deps, затем снова update.sh или make apply-infra-units."
+    return 0
+  fi
+  (
+    cd "${PULL_DIR}"
+    export ENV="${ENV_VALUE}"
+    make apply-infra-units
+  )
+}
+
+apply_infra_units_if_ready
 
 log_info "Готово: публичный репозиторий на ${PUBLIC_REF_VALUE}, приватный — ${PULL_DIR} (${REF_VALUE})."
