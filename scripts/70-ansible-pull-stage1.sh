@@ -5,7 +5,7 @@
 # Историческое имя файла («ansible-pull-stage1») сохранено для совместимости путей
 # в документации и скриптах; фактически выполняются две цели Make в корне клона:
 #
-#   make -C "${PULL_DIR}" install-deps   # коллекции Ansible Galaxy (офлайн после скачивания)
+#   make -C "${PULL_DIR}" install-deps   # install-python-deps (constraints.txt) + коллекции Galaxy
 #   make -C "${PULL_DIR}" bootstrap      # фаза stage1 единого playbooks/site.yml
 #
 # Контракт с приватным репозиторием:

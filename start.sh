@@ -10,7 +10,8 @@
 #
 # Порядок шагов (не менять без обновления README и зависимостей между шагами):
 #   10  root/dnf/утилиты
-#   20  пакеты (+ ansible-core и make, если не SKIP_ANSIBLE)
+#   20  пакеты (+ make, если не SKIP_ANSIBLE; ansible-core ставится в .venv на
+#       шаге 70 из приватного constraints.txt — единый контур версий)
 #   30  github.com HTTPS → git@… при необходимости; deploy key для SSH-URL приватного репо
 #   40  диски, swap, при необходимости /var и /minio
 #   50  git clone/fetch в PULL_DIR

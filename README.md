@@ -2,7 +2,7 @@
 
 **Репозиторий:** [https://github.com/andrey-khudoley/infrastructure-public.git](https://github.com/andrey-khudoley/infrastructure-public.git)
 
-Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками и запуск в каталоге клона двух целей **`Makefile`** — сначала **`make install-deps`** (коллекции Ansible Galaxy), затем **`make bootstrap`** (фаза `stage1` единого `playbooks/site.yml`).
+Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками и запуск в каталоге клона двух целей **`Makefile`** — сначала **`make install-deps`** (Python `.venv` из `constraints.txt` + коллекции Ansible Galaxy в `collections/ansible_collections`), затем **`make bootstrap`** (фаза `stage1` единого `playbooks/site.yml`). Единый контур версий: **никаких** параллельных установок ansible-core из dnf.
 
 ## Роль репозиториев
 
@@ -48,7 +48,7 @@ make -C "${PULL_DIR}" install-deps
 make -C "${PULL_DIR}" bootstrap
 ```
 
-`install-deps` устанавливает коллекции Galaxy (офлайн-кэш + `--offline`), `bootstrap` — алиас для фазы `stage1` единого `playbooks/site.yml` (эквивалент: `ansible-playbook playbooks/site.yml --tags stage1 -e env="${ENV}"`). Дальнейшие фазы (`stage2`, `runtime`) активируются уже на стороне узла через systemd-таймеры, которые ставятся задачами роли `bootstrap`.
+`install-deps` сначала создаёт `.venv` и ставит из `constraints.txt` закреплённый `ansible-core` и Python-зависимости (`scripts/install-python-deps.sh`), затем устанавливает коллекции Galaxy (офлайн-кэш + `--offline`) в repo-local путь `collections/ansible_collections`. `bootstrap` — алиас для фазы `stage1` единого `playbooks/site.yml` (эквивалент: `ansible-playbook playbooks/site.yml --tags stage1 -e env="${ENV}"`), запускается из того же `.venv`. Дальнейшие фазы (`stage2`, `runtime`) активируются уже на стороне узла через systemd-таймеры, которые ставятся задачами роли `bootstrap`.
 
 В процесс **make** передаётся такое окружение (имена переменных — часть контракта с приватным репозиторием):
 
@@ -245,7 +245,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 1. Устанавливает базовые пакеты через `dnf`:
    - при **`SKIP_ANSIBLE=1`**: `epel-release`, `git`, `curl`, `parted`;
-   - иначе: `epel-release`, `git`, `curl`, `ansible-core`, `parted`, **`make`** (нужен для целей **`install-deps`** и **`bootstrap`** приватного **Makefile**).
+   - иначе: `epel-release`, `git`, `curl`, `parted`, **`make`** (нужен для целей **`install-deps`** и **`bootstrap`** приватного **Makefile**). **`ansible-core` из dnf не ставится** — единый контур: ansible-core и коллекции ставятся в приватном `.venv` из `constraints.txt` / `collections/requirements.yml`.
 
 2. Выполняет **`dnf distro-sync -y`** — выравнивание версий установленных пакетов с репозиториями (в т.ч. после подключения EPEL).
 
@@ -312,8 +312,8 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 ```bash
 cd PULL_DIR
-make install-deps    # коллекции Ansible Galaxy (офлайн-кэш)
-make bootstrap       # stage1 единого playbooks/site.yml
+make install-deps    # .venv из constraints.txt + коллекции Galaxy в collections/ansible_collections
+make bootstrap       # stage1 единого playbooks/site.yml (через .venv/bin/ansible-playbook)
 ```
 
 В окружение процесса передаются **`REPO_URL`**, **`REF`**, **`ENV`**, **`PULL_DIR`**, а также **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`), чтобы приватный **Makefile** мог установить коллекции и запустить `playbooks/site.yml --tags stage1`. Полный перечень и смысл — в разделе **«Контракт: переменные для `make install-deps` и `make bootstrap`»** выше.
