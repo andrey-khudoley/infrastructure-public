@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Обновление клона публичного репозитория и синхронизация приватного (только git).
-# После pull приватного клона — make apply-infra-units (ansible-pull.env + systemd), если есть .venv.
+# После pull приватного клона — make apply-infra-units (infra-sync.env + systemd), если есть .venv.
 #
 # Запуск из корня клона infrastructure-public (рядом с этим файлом):
 #   sudo bash update.sh
@@ -54,7 +54,7 @@ sync_repository
 
 # Миграция юнитов на узле после обновления клона приватного репозитория (тег infra_units).
 apply_infra_units_if_ready() {
-  section "Приватный репозиторий: миграция systemd / ansible-pull.env"
+  section "Приватный репозиторий: миграция systemd / infra-sync.env"
   local mk="${PULL_DIR}/Makefile"
   local pb="${PULL_DIR}/.venv/bin/ansible-playbook"
   if [[ ! -f "${mk}" ]]; then

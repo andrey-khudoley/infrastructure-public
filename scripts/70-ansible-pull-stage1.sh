@@ -12,7 +12,7 @@
 #   • В корне клона должен быть Makefile с целями «install-deps» и «bootstrap».
 #   • Цель «bootstrap» запускает фазу stage1 (эквивалент: ansible-playbook
 #     playbooks/site.yml --tags stage1 -e env="${ENV}").
-#   • Обновление только ansible-pull.env и infra-*.service|timer после git pull — «make apply-infra-units»
+#   • Обновление только infra-sync.env и infra-*.service|timer после git pull — «make apply-infra-units»
 #     (см. приватный Makefile); на узле без полного bootstrap вызывается из update.sh.
 #   • Дальнейшие фазы (stage2, runtime) запускаются через таймеры systemd, которые
 #     ставятся задачами из роли bootstrap (см. приватный README).
