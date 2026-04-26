@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 #
-# Шаг 90 — после пакетов и «make install-deps» + «make bootstrap» повторный distro-sync
-# и смоук-тесты критичных сервисов, чтобы выявить поломанные зависимости до потери доступа по SSH.
+# Шаг 90 — после пакетов и «make install-deps» повторный distro-sync, смоук-тесты
+# критичных сервисов и итоговая подсказка с командой запуска stage1 вручную.
+# Никаких systemd-юнитов и автоматических переходов; stage1/stage2/runtime
+# запускаются пользователем через make в корне клона.
 
 # Проверяет конфигурацию sshd и доступность сервиса после обновлений пакетов.
 #
@@ -52,18 +54,31 @@ verify_critical_services() {
   log_info "Критичные проверки пройдены."
 }
 
-# Финальный distro-sync, проверки сервисов и итоговое сообщение.
+# Печатает итоговую подсказку с командой запуска stage1 вручную.
 #
-# @globals SKIP_ANSIBLE
+# @globals PULL_DIR ENV_VALUE SKIP_ANSIBLE
+# @return 0
+print_next_step_hint() {
+  section "Следующий шаг — stage1 (вручную)"
+  if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
+    log_info "SKIP_ANSIBLE=1: установите зависимости вручную и запустите stage1:"
+    echo "    cd ${PULL_DIR}"
+    echo "    sudo make install-deps"
+    echo "    sudo make stage1 ENV=${ENV_VALUE}"
+  else
+    log_info "Подготовка завершена. Запустите фазу stage1:"
+    echo "    cd ${PULL_DIR}"
+    echo "    sudo make stage1 ENV=${ENV_VALUE}"
+  fi
+  echo
+  log_info "Дальше stage1 сам подскажет команду для stage2 (и при необходимости перезагрузит сервер)."
+}
+
+# Финальный distro-sync, проверки сервисов и итоговая подсказка.
+#
 # @return 0
 step_finalize() {
   distro_sync_system
   verify_critical_services
-
-  section "Готово"
-  if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
-    log_info "Bootstrap завершён (без make install-deps/bootstrap в приватном репо)."
-  else
-    log_info "Приватный репозиторий: make install-deps + make bootstrap выполнены успешно."
-  fi
+  print_next_step_hint
 }

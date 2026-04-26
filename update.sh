@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
 # Обновление клона публичного репозитория и синхронизация приватного (только git).
-# После pull приватного клона — make apply-infra-units (infra-sync.env + systemd), если есть .venv.
+# Никаких systemd-юнитов больше нет: после `git pull` приватного клона
+# применить изменения на узле — это вручную через `make stage1`/`make stage2`/
+# `make runtime` в корне клона (см. README приватного репозитория).
 #
 # Запуск из корня клона infrastructure-public (рядом с этим файлом):
 #   sudo bash update.sh
@@ -49,29 +51,16 @@ sync_public_repository() {
   )
 }
 
-sync_public_repository
-sync_repository
-
-# Миграция юнитов на узле после обновления клона приватного репозитория (тег infra_units).
-apply_infra_units_if_ready() {
-  section "Приватный репозиторий: миграция systemd / infra-sync.env"
-  local mk="${PULL_DIR}/Makefile"
-  local pb="${PULL_DIR}/.venv/bin/ansible-playbook"
-  if [[ ! -f "${mk}" ]]; then
-    log_info "Нет ${mk} — пропуск make apply-infra-units."
-    return 0
-  fi
-  if [[ ! -x "${pb}" ]]; then
-    log_warn "Нет исполняемого ${pb} — выполните в клоне: make install-deps, затем снова update.sh или make apply-infra-units."
-    return 0
-  fi
-  (
-    cd "${PULL_DIR}"
-    export ENV="${ENV_VALUE}"
-    make apply-infra-units
-  )
+print_next_steps_hint() {
+  section "Готово"
+  log_info "Публичный репозиторий: ${PUBLIC_REF_VALUE}. Приватный: ${PULL_DIR} (${REF_VALUE})."
+  log_info "Чтобы применить изменения на узле, выполните вручную в корне клона приватного репо:"
+  echo "    cd ${PULL_DIR}"
+  echo "    sudo make runtime ENV=${ENV_VALUE}"
+  echo
+  log_info "Для повторного прогона фаз bootstrap (после правок ролей stage1/stage2) — make stage1 / make stage2 в том же каталоге."
 }
 
-apply_infra_units_if_ready
-
-log_info "Готово: публичный репозиторий на ${PUBLIC_REF_VALUE}, приватный — ${PULL_DIR} (${REF_VALUE})."
+sync_public_repository
+sync_repository
+print_next_steps_hint

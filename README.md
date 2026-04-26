@@ -2,22 +2,27 @@
 
 **Репозиторий:** [https://github.com/andrey-khudoley/infrastructure-public.git](https://github.com/andrey-khudoley/infrastructure-public.git)
 
-Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками и запуск в каталоге клона двух целей **`Makefile`** — сначала **`make install-deps`** (Python `.venv` из `constraints.txt` + коллекции Ansible Galaxy в `collections/ansible_collections`), затем **`make bootstrap`** (фаза `stage1` единого `playbooks/site.yml`). Единый контур версий: **никаких** параллельных установок ansible-core из dnf.
+Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: пакеты, диски и swap, клон **приватного** репозитория с плейбуками и установка зависимостей Ansible (Python `.venv` из `constraints.txt` + коллекции Galaxy в `collections/ansible_collections`). Единый контур версий: **никаких** параллельных установок ansible-core из dnf.
+
+Запуск самих фаз `stage1` → `stage2` → `runtime` — это **отдельные ручные шаги** на стороне приватного репозитория (`make stage1`, затем `make stage2`, затем при необходимости `make runtime`). Никаких systemd-юнитов и автоматических переходов между фазами bootstrap **не используется**: `start.sh` лишь готовит хост и в конце печатает подсказку с командой запуска `stage1`.
 
 ## Роль репозиториев
 
 | Репозиторий | Роль |
 |-------------|------|
-| **Этот (public)** | Подготовка хоста: пакеты, диски; шаг **30** при необходимости приводит **`REPO_URL`** с **`github.com`** по HTTPS к **`git@…`** и готовит deploy key; иначе задайте SSH-URL сами; клон в `PULL_DIR`, **`make install-deps`** + **`make bootstrap`**, `distro-sync` и проверки. |
-| **Приватный** | Вся прикладная Ansible-логика: единый `playbooks/site.yml` с фазами `stage1` → `stage2` → `runtime` и **`Makefile`** с целями **`install-deps`**, **`bootstrap`** (= `stage1`), **`stage2`**, **`runtime`** и другими. |
+| **Этот (public)** | Подготовка хоста: пакеты, диски; шаг **30** при необходимости приводит **`REPO_URL`** с **`github.com`** по HTTPS к **`git@…`** и готовит deploy key; иначе задайте SSH-URL сами; клон в `PULL_DIR`, **`make install-deps`** в каталоге клона, `distro-sync` и проверки. В конце — подсказка с командой `make stage1`. |
+| **Приватный** | Вся прикладная Ansible-логика: единый `playbooks/site.yml` с фазами `stage1` → `stage2` → `runtime` и **`Makefile`** с целями **`install-deps`**, **`stage1`**, **`stage2`**, **`runtime`** и другими. Запуск каждой фазы — вручную. |
 
-Публичный сценарий **не** дублирует содержимое приватного **`Makefile`**: он только гарантирует окружение и вызывает **`make install-deps`** + **`make bootstrap`** с согласованным набором переменных (см. раздел **«Контракт: переменные для `make install-deps` и `make bootstrap`»**).
+Публичный сценарий **не** дублирует содержимое приватного **`Makefile`**: он только гарантирует окружение и вызывает **`make install-deps`** с согласованным набором переменных (см. раздел **«Контракт: переменные для `make install-deps`»**). Запуск `make stage1` — за пользователем.
 
 ## Алгоритм вызова
 
 1. **Склонировать этот репозиторий целиком** (нужны `start.sh` и каталог `scripts/` с библиотеками и шагами; одного `start.sh` недостаточно).
 2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`. При необходимости отредактировать **`.env`** в корне (единственный файл настроек: `ENV`, `REPO_URL`, `REF` и остальное из таблицы ниже).
 3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
+4. После завершения `start.sh` напечатает подсказку — вручную выполнить `cd $PULL_DIR && sudo make stage1 ENV=$ENV`.
+5. По окончании `make stage1` будет напечатана подсказка про `make stage2` (если `stage1` потребовал ребут — после загрузки выполнить `make stage2` вручную).
+6. Аналогично после `make stage2` появится подсказка про `make runtime` (запускается по необходимости — никаких таймеров).
 
 Минимальный пример с **дефолтами из `.env`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **30** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
 
@@ -25,6 +30,11 @@
 git clone https://github.com/andrey-khudoley/infrastructure-public.git
 cd infrastructure-public
 sudo env ENV=stage REF=main bash start.sh
+# по окончании:
+cd /var/lib/infra/src        # PULL_DIR из .env
+sudo make stage1 ENV=stage   # после успеха — подсказка про stage2 (или ребут)
+sudo make stage2 ENV=stage   # после успеха — подсказка про runtime
+sudo make runtime ENV=stage  # по необходимости
 ```
 
 Типичный вариант для **приватного** репо на GitHub **без** токена в URL — явный **`git@…`** и deploy key (шаг **30** создаст ключ и покажет публичную часть):
@@ -39,16 +49,15 @@ sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructu
 
 Единственный сценарий верхнего уровня — **`start.sh`**: последовательно подключает шаги из `scripts/` и вызывает функции `step_*`. Порядок шагов и назначение задокументированы в **комментариях в начале `start.sh`**. Все примеры ниже предполагают запуск **от root** (или через `sudo bash`).
 
-### Контракт: переменные для `make install-deps` и `make bootstrap`
+### Контракт: переменные для `make install-deps`
 
-После успешного клона в **`PULL_DIR`** выполняются две цели:
+После успешного клона в **`PULL_DIR`** выполняется только подготовка зависимостей:
 
 ```
 make -C "${PULL_DIR}" install-deps
-make -C "${PULL_DIR}" bootstrap
 ```
 
-`install-deps` сначала создаёт `.venv` и ставит из `constraints.txt` закреплённый `ansible-core` и Python-зависимости (`scripts/install-python-deps.sh`), затем устанавливает коллекции Galaxy (офлайн-кэш + `--offline`) в repo-local путь `collections/ansible_collections`. `bootstrap` — алиас для фазы `stage1` единого `playbooks/site.yml` (эквивалент: `ansible-playbook playbooks/site.yml --tags stage1 -e env="${ENV}"`), запускается из того же `.venv`. Дальнейшие фазы (`stage2`, `runtime`) активируются уже на стороне узла через systemd-таймеры, которые ставятся задачами роли `bootstrap`.
+`install-deps` сначала создаёт `.venv` и ставит из `constraints.txt` закреплённый `ansible-core` и Python-зависимости (`scripts/install-python-deps.sh`), затем устанавливает коллекции Galaxy (офлайн-кэш + `--offline`) в repo-local путь `collections/ansible_collections`. **Сам `ansible-playbook` `start.sh` не запускает** — фазы `stage1`, `stage2`, `runtime` инициирует пользователь вручную через `make stage1`/`make stage2`/`make runtime` уже в каталоге клона.
 
 В процесс **make** передаётся такое окружение (имена переменных — часть контракта с приватным репозиторием):
 
@@ -57,7 +66,7 @@ make -C "${PULL_DIR}" bootstrap
 | `REPO_URL` | **`.env`** (если не переопределён окружением) | URL приватного репозитория (тот же, что для `git clone`). |
 | `REF` | значение **`REF_VALUE`** (из `REF=…` при запуске и/или из **`.env`**) | Ветка, тег или коммит; в скриптах после **`load-env.sh`** хранится как **`REF_VALUE`**, в **export** для **`make`** — имя **`REF`**, как ожидает приватный **Makefile**. |
 | `ENV` | значение **`ENV_VALUE`** (из `ENV` при запуске) | Логическое окружение (`ctl`, `stage`, `prod`); выбирает `vars/{{ env }}.yml` на стороне приватного репо. |
-| `PULL_DIR` | абсолютный путь к клону | Рабочий каталог клона; совпадает с каталогом, из которого выполняются цели make. |
+| `PULL_DIR` | абсолютный путь к клону | Рабочий каталог клона; совпадает с каталогом, из которого выполняется `make install-deps`. |
 | `GALAXY_*` | см. таблицу ниже | Таймауты, ретраи и каталог кэша для `scripts/galaxy-offline-install.sh` (используется целью `install-deps`). |
 | `COLLECTIONS_REQ` | переменная окружения или по умолчанию `PULL_DIR/collections/requirements.yml` | Путь к `requirements.yml` коллекций. |
 
@@ -97,7 +106,7 @@ PULL_DIR=/opt/infra/src ENV=stage REF=main REPO_URL=git@github.com:andrey-khudol
 
 ### Без Ansible (только ОС, диски, пакеты)
 
-Полезно для проверки разметки дисков без клона и без **`make install-deps`** / **`make bootstrap`** в приватном репо:
+Полезно для проверки разметки дисков без клона и без **`make install-deps`** в приватном репо:
 
 ```bash
 SKIP_ANSIBLE=1 bash start.sh
@@ -129,7 +138,7 @@ INFRA_SSH_SKIP_PROMPT=1 ENV=stage REPO_URL=git@github.com:andrey-khudoley/infras
 
 ### Galaxy и медленная сеть
 
-Переменные **`GALAXY_*`** и **`COLLECTIONS_REQ`** передаются в окружение процессов **`make install-deps`** и **`make bootstrap`** (используются в `scripts/galaxy-offline-install.sh` из приватного репо). Увеличить таймаут и число повторов:
+Переменные **`GALAXY_*`** и **`COLLECTIONS_REQ`** передаются в окружение процесса **`make install-deps`** (используются в `scripts/galaxy-offline-install.sh` из приватного репо). Увеличить таймаут и число повторов:
 
 ```bash
 GALAXY_INSTALL_TIMEOUT=600 GALAXY_INSTALL_RETRIES=10 GALAXY_RETRY_SLEEP_SEC=15 \
@@ -165,12 +174,24 @@ DISK_VARS_FILE=/etc/infra/bootstrap-disk.env \
 MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
+## Обновление кода на уже настроенном узле
+
+Если **infrastructure-public** уже склонирован рядом с клоном приватного репо (тот же `.env` и `PULL_DIR`):
+
+```bash
+cd /путь/к/infrastructure-public
+sudo bash update.sh
+```
+
+Скрипт выполнит `git pull` / синхронизацию публичного клона и **приватного** (`PULL_DIR` из `.env`), без установки каких-либо systemd-юнитов. В конце напечатает подсказку: в корне **приватного** клона вручную запустить `sudo make runtime ENV=…` (и при необходимости снова `make stage1` / `make stage2`). Конфиг — тот же корневой `.env` (см. `scripts/lib/load-env.sh`).
+
 ## Структура репозитория
 
 ```
 ├── README.md
 ├── .env                     # обязательный файл настроек (коммитится; см. комментарии в файле)
 ├── start.sh                 # оркестратор: комментарии в шапке; source lib и scripts/NN-*.sh; step_*()
+├── update.sh                # обновить оба клона (git); дальше вручную `make runtime` в приватном
 ├── scripts/
 │   ├── lib/
 │   │   ├── load-env.sh      # обязательный корневой .env; нормализация ENV_VALUE/REF_VALUE
@@ -180,8 +201,8 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 │   ├── 30-ssh-deploy-key.sh
 │   ├── 40-disk-storage.sh
 │   ├── 50-sync-repository.sh
-│   ├── 70-ansible-pull-stage1.sh   # make install-deps + make bootstrap в PULL_DIR
-│   └── 90-finalize.sh
+│   ├── 70-install-deps.sh   # make install-deps в PULL_DIR (без stage1)
+│   └── 90-finalize.sh       # distro-sync, проверки и подсказка про make stage1
 ```
 
 ## Переменные окружения
@@ -190,11 +211,11 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 | Переменная | По умолчанию | Описание |
 |------------|--------------|----------|
-| `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make install-deps`** / **`make bootstrap`**). |
+| `ENV` | `ctl` | Окружение: `ctl`, `stage`, `prod` (экспортируется в **`make install-deps`**, повторно подставляется в подсказке про `make stage1`). |
 | `REPO_URL` | в **`.env`** по умолчанию HTTPS на `github.com/…`; в шаге **30** такой URL приводится к **`git@github.com:…`**. Итоговый URL — тот же, что для `git clone`. Там же готовится deploy key для `git@…` / `ssh://…`. Другой хост или клон строго по HTTPS — задайте URL вручную (для HTTPS без конвертации нужны учётные данные git). |
 | `REF` | `main` | Ветка, тег или коммит. |
-| `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняются **`make install-deps`** и **`make bootstrap`**. |
-| `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо, не запускать **`make install-deps`** / **`make bootstrap`**. |
+| `PULL_DIR` | `/var/lib/infra/src` | Каталог клона; отсюда выполняется **`make install-deps`** и далее запускается `make stage1` вручную. |
+| `SKIP_ANSIBLE` | `0` | При `1` — не клонировать репо и не запускать **`make install-deps`**. Подсказка в финале сообщит, что зависимости и stage1 нужно запустить вручную позже. |
 | `GALAXY_INSTALL_TIMEOUT` | `300` | Таймаут `ansible-galaxy` (сек), передаётся в окружение **`make install-deps`**. |
 | `GALAXY_DOWNLOAD_DIR` | `/var/lib/infra/galaxy-download` | Кэш скачанных коллекций (для целей приватного **Makefile**). |
 | `GALAXY_INSTALL_RETRIES` | `5` | Число повторов сетевых шагов (окружение **`make install-deps`**). |
@@ -245,7 +266,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 1. Устанавливает базовые пакеты через `dnf`:
    - при **`SKIP_ANSIBLE=1`**: `epel-release`, `git`, `curl`, `parted`;
-   - иначе: `epel-release`, `git`, `curl`, `parted`, **`make`** (нужен для целей **`install-deps`** и **`bootstrap`** приватного **Makefile**). **`ansible-core` из dnf не ставится** — единый контур: ansible-core и коллекции ставятся в приватном `.venv` из `constraints.txt` / `collections/requirements.yml`.
+   - иначе: `epel-release`, `git`, `curl`, `parted`, **`make`** (нужен для целей **`install-deps`** и фаз **`stage1`/`stage2`/`runtime`** приватного **Makefile**). **`ansible-core` из dnf не ставится** — единый контур: ansible-core и коллекции ставятся в приватном `.venv` из `constraints.txt` / `collections/requirements.yml`.
 
 2. Выполняет **`dnf distro-sync -y`** — выравнивание версий установленных пакетов с репозиториями (в т.ч. после подключения EPEL).
 
@@ -299,24 +320,21 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 
 Реализация: `sync_repository` в `scripts/50-sync-repository.sh`.
 
-### Шаг 70 — `ansible-pull-stage1` (вызов `make install-deps` + `make bootstrap`)
+### Шаг 70 — `install-deps` (вызов `make install-deps`)
 
-**Файл:** `scripts/70-ansible-pull-stage1.sh`  
-**Функция:** `step_ansible_pull_stage1`
-
-Имя файла историческое (раньше здесь вызывался другой сценарий); фактически в каталоге клона последовательно выполняются две цели Make — **`install-deps`** и **`bootstrap`**. Подробные комментарии — в **начале `scripts/70-ansible-pull-stage1.sh`** (контракт с приватным репо, зачем subshell, почему **`REF`** в export берётся из **`REF_VALUE`**).
+**Файл:** `scripts/70-install-deps.sh`  
+**Функция:** `step_install_deps`
 
 При **`SKIP_ANSIBLE=1`** пропускается.
 
-Иначе после клона в **`PULL_DIR`** ожидается **`Makefile`** с целями **`install-deps`** и **`bootstrap`**. В каталоге клона выполняется:
+Иначе после клона в **`PULL_DIR`** ожидается **`Makefile`** с целью **`install-deps`**. В каталоге клона выполняется:
 
 ```bash
 cd PULL_DIR
 make install-deps    # .venv из constraints.txt + коллекции Galaxy в collections/ansible_collections
-make bootstrap       # stage1 единого playbooks/site.yml (через .venv/bin/ansible-playbook)
 ```
 
-В окружение процесса передаются **`REPO_URL`**, **`REF`**, **`ENV`**, **`PULL_DIR`**, а также **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`), чтобы приватный **Makefile** мог установить коллекции и запустить `playbooks/site.yml --tags stage1`. Полный перечень и смысл — в разделе **«Контракт: переменные для `make install-deps` и `make bootstrap`»** выше.
+Запуск **самих фаз** Ansible (`stage1`, `stage2`, `runtime`) на этом шаге **не делается**: пользователь запускает их вручную через `make stage1`/`make stage2`/`make runtime` в каталоге клона. В окружение `make install-deps` передаются **`REPO_URL`**, **`REF`**, **`ENV`**, **`PULL_DIR`**, а также **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`).
 
 Если **`Makefile`** отсутствует, шаг завершается с ошибкой.
 
@@ -325,19 +343,24 @@ make bootstrap       # stage1 единого playbooks/site.yml (через .ven
 **Файл:** `scripts/90-finalize.sh`  
 **Функция:** `step_finalize`
 
-1. Повторный **`dnf distro-sync -y`** после установки пакетов и целей **`make install-deps`** / **`make bootstrap`**.
+1. Повторный **`dnf distro-sync -y`** после установки пакетов и цели **`make install-deps`**.
 2. **`verify_critical_services`** — `sshd -t`, при необходимости проверка **NetworkManager**, если он включён (реализация в `scripts/90-finalize.sh`).
-
-Выводится итоговое сообщение: с `SKIP_ANSIBLE=1` или после полного прохода.
+3. **`print_next_step_hint`** — итоговая подсказка с готовой командой `cd ${PULL_DIR} && sudo make stage1 ENV=${ENV}` (с учётом `SKIP_ANSIBLE`). Дальше пользователь сам запускает фазы.
 
 ## Связь с приватным репозиторием
 
-Точка входа на стороне приватного репозитория — **`Makefile`** с целями **`install-deps`** (коллекции Ansible Galaxy) и **`bootstrap`** (алиас для фазы `stage1` единого `playbooks/site.yml`). Публичный bootstrap после клона в **`PULL_DIR`** последовательно выполняет **`make install-deps`** и **`make bootstrap`**, передавая в окружение **`ENV`**, **`REPO_URL`**, **`REF`**, **`PULL_DIR`** и при необходимости **`GALAXY_*`** / **`COLLECTIONS_REQ`**. Дальнейшие фазы (`stage2`, `runtime`) активируются на стороне узла через systemd-таймеры, которые ставятся ролью `bootstrap`.
+Точка входа на стороне приватного репозитория — **`Makefile`** с целями **`install-deps`** (Ansible Galaxy + venv), **`stage1`** / **`stage2`** / **`runtime`** (фазы единого `playbooks/site.yml`). Публичный bootstrap после клона в **`PULL_DIR`** выполняет **только** `make install-deps`, передавая в окружение **`ENV`**, **`REPO_URL`**, **`REF`**, **`PULL_DIR`** и при необходимости **`GALAXY_*`** / **`COLLECTIONS_REQ`**. Сами фазы запускает пользователь:
+
+```bash
+sudo make stage1 ENV=...   # подскажет команду для stage2; при необходимости перезагрузит сервер
+sudo make stage2 ENV=...   # подскажет команду для runtime
+sudo make runtime ENV=...  # по необходимости (никаких таймеров и юнитов больше нет)
+```
 
 ### Что править при изменении контракта
 
-1. **Приватный репо:** цели **`install-deps`** и **`bootstrap`** в **`Makefile`**, теги в **`playbooks/site.yml`**, использование переменных окружения.
-2. **Публичный репо:** функция **`run_stage1_ansible_pull`** в **`scripts/70-ansible-pull-stage1.sh`** (список **`export`** и последовательность `make`-целей), при изменении **`REPO_URL`** — **`normalize_github_https_repo_url`** в **`scripts/lib/common.sh`**, дефолт **`REPO_URL`** в **`.env`**, таблицы в этом **README**.
+1. **Приватный репо:** цели **`install-deps`**, **`stage1`**, **`stage2`**, **`runtime`** в **`Makefile`**, теги в **`playbooks/site.yml`**, использование переменных окружения.
+2. **Публичный репо:** функция **`run_install_deps`** в **`scripts/70-install-deps.sh`** (список **`export`**), при изменении **`REPO_URL`** — **`normalize_github_https_repo_url`** в **`scripts/lib/common.sh`**, дефолт **`REPO_URL`** в **`.env`**, таблицы в этом **README**, текст подсказки в **`scripts/90-finalize.sh`**.
 3. Сохраняйте согласованность имён: внешний интерфейс для **`make`** — **`REF`** и **`ENV`**, а не **`REF_VALUE`** / **`ENV_VALUE`** (последние — только внутри shell после **`load-env.sh`**).
 
 ### Комментарии в коде
@@ -349,6 +372,7 @@ make bootstrap       # stage1 единого playbooks/site.yml (через .ven
 - **`start.sh`** — порядок шагов и ограничения запуска;
 - **`.env`**, **`scripts/lib/load-env.sh`** — корневой конфиг и загрузка переменных;
 - **`scripts/lib/common.sh`** — **`git_repo`**, **`normalize_github_https_repo_url`**, **`dnf_install`**;
-- **`scripts/10-require-runtime.sh`** … **`scripts/50-sync-repository.sh`**, **`scripts/90-finalize.sh`** — шапка файла и JSDoc у **`step_*`** и вспомогательных функций;
+- **`scripts/10-require-runtime.sh`** … **`scripts/50-sync-repository.sh`** — шапка файла и JSDoc у **`step_*`** и вспомогательных функций;
 - **`scripts/40-disk-storage.sh`** — шапка файла и JSDoc у каждой функции (включая вложенную **`pick_disk`**);
-- **`scripts/70-ansible-pull-stage1.sh`** — контракт **`make install-deps`** + **`make bootstrap`**, связка **`REF`** / **`REF_VALUE`**, историческое имя файла, JSDoc у **`run_stage1_ansible_pull`** / **`step_ansible_pull_stage1`**.
+- **`scripts/70-install-deps.sh`** — контракт **`make install-deps`**, JSDoc у **`run_install_deps`** / **`step_install_deps`**;
+- **`scripts/90-finalize.sh`** — `verify_critical_services` и `print_next_step_hint` (итоговая подсказка про `make stage1`).
