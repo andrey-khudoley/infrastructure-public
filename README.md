@@ -203,6 +203,8 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 | `INFRA_SSH_KEY` | `/root/.ssh/id_ed25519_infra` | Ключ для `git@` / `ssh://`. |
 | `INFRA_SSH_KEY_COMMENT` | `infra@repo` | Комментарий к ключу. |
 | `INFRA_SSH_SKIP_PROMPT` | `0` | При `1` — не ждать Enter после показа публичного ключа. |
+| `INFRA_VAULT_PASSWORD` | *(пусто)* | Пароль **Ansible Vault** для приватного `vars/admin_credentials.yml`; записывается в **`PULL_DIR/.vault_pass`** (неинтерактив вместо запроса). |
+| `INFRA_VAULT_SKIP_PROMPT` | `0` | При `1` — не спрашивать пароль Vault: скопировать **`vault_password.example`** в **`.vault_pass`**, если в клоне есть зашифрованный `admin_credentials.yml`. |
 | `DISK_VARS_FILE` | `/etc/infra/bootstrap-disk.env` | Локальный профиль дисков. |
 | `DISK_VARS_REPO_PATH` | `bootstrap-disk.env` | Путь к файлу профиля внутри репозитория. |
 | `DISK_PROFILE_FETCH_FROM_REPO` | `1` | Подтянуть профиль дисков из репо, если локального файла нет. |
@@ -304,7 +306,7 @@ MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infr
 **Файл:** `scripts/70-ansible-pull-stage1.sh`  
 **Функция:** `step_ansible_pull_stage1`
 
-Имя файла историческое (раньше здесь вызывался другой сценарий); фактически в каталоге клона последовательно выполняются две цели Make — **`install-deps`** и **`bootstrap`**. Подробные комментарии — в **начале `scripts/70-ansible-pull-stage1.sh`** (контракт с приватным репо, зачем subshell, почему **`REF`** в export берётся из **`REF_VALUE`**).
+Имя файла историческое (раньше здесь вызывался другой сценарий); фактически в каталоге клона последовательно выполняются две цели Make — **`install-deps`** и **`bootstrap`**. Перед `make` при наличии в клоне зашифрованного **`vars/admin_credentials.yml`** (строка начинается с **`$ANSIBLE_VAULT;`**) вызывается запрос пароля **Ansible Vault** с записью в **`PULL_DIR/.vault_pass`**, либо используются **`INFRA_VAULT_PASSWORD`**, готовый **`.vault_pass`**, либо **`INFRA_VAULT_SKIP_PROMPT=1`**. Подробные комментарии — в **начале `scripts/70-ansible-pull-stage1.sh`** (контракт с приватным репо, зачем subshell, почему **`REF`** в export берётся из **`REF_VALUE`**).
 
 При **`SKIP_ANSIBLE=1`** пропускается.
 

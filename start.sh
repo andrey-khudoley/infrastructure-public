@@ -15,7 +15,8 @@
 #   30  github.com HTTPS → git@… при необходимости; deploy key для SSH-URL приватного репо
 #   40  диски, swap, при необходимости /var и /minio
 #   50  git clone/fetch в PULL_DIR
-#   70  make install-deps + make bootstrap в PULL_DIR (контракт с приватным репо)
+#   70  make install-deps + make bootstrap в PULL_DIR; при зашифрованном
+#       vars/admin_credentials.yml — запрос пароля Ansible Vault → .vault_pass
 #   90  distro-sync и проверка sshd / NetworkManager
 #
 # Конфигурация:

@@ -23,8 +23,73 @@
 #   из REF_VALUE (REF в shell — ветка из REF=… при запуске и из .env).
 #   GALAXY_* и COLLECTIONS_REQ — параметры офлайн-установки коллекций Galaxy.
 #
+# Ansible Vault (приватный репозиторий): при зашифрованном vars/admin_credentials.yml
+# запрашивается пароль Vault и записывается в PULL_DIR/.vault_pass (см. ensure_ansible_vault_pass_file).
+# Автоматизация: INFRA_VAULT_PASSWORD, INFRA_VAULT_SKIP_PROMPT=1 (копия из vault_password.example),
+# готовый .vault_pass в клоне.
+#
 # Подшаг в subshell «( )»: изолировать cd в PULL_DIR и не менять cwd родительского
 # процесса start.sh.
+
+# Проверяет, зашифрован ли приватный vars/admin_credentials.yml (Ansible Vault).
+#
+# @globals PULL_DIR
+_infra_needs_ansible_vault_password() {
+  local f cred
+  cred="${PULL_DIR}/vars/admin_credentials.yml"
+  [[ -f "${cred}" ]] || return 1
+  IFS= read -r f < "${cred}" || return 1
+  [[ "${f}" == "\$ANSIBLE_VAULT;"* ]]
+}
+
+# Создаёт PULL_DIR/.vault_pass, если в приватном репозитории есть vault-файл с секретами (admin_credentials).
+# Интерактив: два ввода пароля. Неинтерактив: INFRA_VAULT_PASSWORD или INFRA_VAULT_SKIP_PROMPT=1.
+#
+# @globals PULL_DIR INFRA_VAULT_PASSWORD INFRA_VAULT_SKIP_PROMPT
+ensure_ansible_vault_pass_file() {
+  _infra_needs_ansible_vault_password || return 0
+
+  local vp ex v1 v2
+  vp="${PULL_DIR}/.vault_pass"
+  ex="${PULL_DIR}/vault_password.example"
+
+  if [[ -f "${vp}" && -s "${vp}" ]]; then
+    log_info "Пароль Ansible Vault уже в ${vp}, ввод пропущен."
+    return 0
+  fi
+
+  if [[ -n "${INFRA_VAULT_PASSWORD:-}" ]]; then
+    printf '%s\n' "${INFRA_VAULT_PASSWORD}" > "${vp}"
+    chmod 600 "${vp}"
+    log_info "Пароль Ansible Vault записан в ${vp} (INFRA_VAULT_PASSWORD)."
+    return 0
+  fi
+
+  if [[ "${INFRA_VAULT_SKIP_PROMPT:-0}" == "1" ]]; then
+    if [[ -f "${ex}" ]]; then
+      cp -f "${ex}" "${vp}"
+      chmod 600 "${vp}"
+      log_info "INFRA_VAULT_SKIP_PROMPT=1: ${vp} скопирован из ${ex}."
+    else
+      log_warn "INFRA_VAULT_SKIP_PROMPT=1, но нет ${ex} — make может не расшифровать vault."
+    fi
+    return 0
+  fi
+
+  if ! [[ -t 0 ]]; then
+    fail "Нет TTY: задайте пароль к Ansible Vault в ${vp} заранее, либо INFRA_VAULT_PASSWORD, либо INFRA_VAULT_SKIP_PROMPT=1."
+  fi
+
+  section "Пароль Ansible Vault (располагается в клоне как .vault_pass)"
+  read -r -s -p "Введите пароль Ansible Vault: " v1
+  echo
+  read -r -s -p "Повторите пароль: " v2
+  echo
+  [[ "${v1}" == "${v2}" ]] || fail "Пароли не совпадают."
+  printf '%s\n' "${v1}" > "${vp}"
+  chmod 600 "${vp}"
+  log_info "Создан ${vp} (права 600)."
+}
 
 # Выполняет «make install-deps» и «make bootstrap» в каталоге клона с экспортом
 # контрактных переменных окружения.
@@ -36,6 +101,9 @@ run_stage1_ansible_pull() {
   section "Приватный репозиторий: make install-deps + make bootstrap"
   local mk="${PULL_DIR}/Makefile"
   [[ -f "${mk}" ]] || fail "Не найден ${mk}. В корне приватного репозитория должен быть Makefile (цели install-deps и bootstrap)."
+
+  ensure_ansible_vault_pass_file
+
   (
     cd "${PULL_DIR}"
     export REPO_URL="${REPO_URL}"
