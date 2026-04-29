@@ -300,8 +300,9 @@ sudo bash update.sh
 3. **`apply_disk_defaults`** — значения по умолчанию для размеров и лимитов (то, что ещё не задано).
 4. **`ensure_swap`** — при необходимости создание файла подкачки `/swapfile`.
 5. Повторный **`apply_disk_defaults`** после подгрузки профиля из репозитория (если она была).
-6. **`expand_root_lv_if_needed`** — расширение root LV при LVM и свободном месте.
+6. **`expand_root_lv_if_needed`** — расширение root LV до **`ROOT_TARGET_G`** при LVM и наличии места в VG (growpart/pvresize при необходимости).
 7. **`prepare_var_and_minio`** — перенос `/var` на отдельный раздел или LV и при необходимости создание `/minio` (при необходимости ставится **`parted`** через **`dnf`** — уже после swap).
+8. **`expand_root_lv_consume_vg_free`** — если корень на LVM: **`lvextend -l +100%FREE`** для root LV и расширение ФС — весь **оставшийся** свободный объём в VG после шагов 6–7 добавляется к корню (отключить: **`ROOT_LV_FILL_VG_FREE=0`**).
 
 Перед разметкой на диске с корнем при **`VAR_ALLOW_ROOT_DISK=1`** (значение по умолчанию) выводится предупреждение и ожидается Enter, если не задано **`VAR_ALLOW_ROOT_DISK_SKIP_PROMPT=1`** и stdin — TTY.
 

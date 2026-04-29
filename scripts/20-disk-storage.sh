@@ -376,6 +376,48 @@ expand_root_lv_if_needed() {
   log_info "root LV приведен к ${ROOT_TARGET_G}G (если хватило места в VG)."
 }
 
+# Расширяет root LV на все свободные PE в VG после разметки по профилю (root до ROOT_TARGET_G, затем LV /var и /minio при необходимости).
+# Использует только свободные extent'ы — не забирает место у уже созданных LV.
+#
+# @globals ROOT_LV ROOT_VG ROOT_LV_FILL_VG_FREE
+# @return 0
+expand_root_lv_consume_vg_free() {
+  section "Расширение root на остаток VG"
+
+  [[ "${ROOT_LV_FILL_VG_FREE:-1}" == "1" ]] || {
+    log_info "ROOT_LV_FILL_VG_FREE=${ROOT_LV_FILL_VG_FREE:-}: расширение root на остаток VG отключено."
+    return 0
+  }
+
+  if ! has_cmd lvs || ! has_cmd lvextend; then
+    log_warn "LVM утилиты отсутствуют, пропускаем расширение root на хвост VG."
+    return 0
+  fi
+
+  if ! ensure_root_lvm_metadata; then
+    log_info "Корень не на LVM — остаток VG не применяется."
+    return 0
+  fi
+
+  [[ -n "${ROOT_LV:-}" ]] || return 0
+
+  local vg_free
+  vg_free=$(vg_free_gib "${ROOT_VG}")
+  [[ -n "${vg_free}" ]] || vg_free=0
+  if [[ "${vg_free}" -le 0 ]] 2>/dev/null; then
+    log_info "В VG ${ROOT_VG} нет свободного места для расширения root."
+    return 0
+  fi
+
+  log_info "Расширяем root LV на весь свободный остаток VG (~${vg_free}G)."
+  if ! lvextend -l +100%FREE "${ROOT_LV}"; then
+    log_warn "Не удалось расширить ${ROOT_LV} на свободное место VG."
+    return 0
+  fi
+  grow_root_filesystem || true
+  log_info "root LV расширен на весь доступный хвост VG."
+}
+
 # Подбирает диск и диапазон свободного места для выделения /var разделами (не LVM).
 #
 # @globals VAR_ALLOW_ROOT_DISK VAR_DISK_DEVICE ROOT_VG VAR_DISK VAR_FREE_START VAR_FREE_END VAR_MIN_FREE_MIB
@@ -650,26 +692,45 @@ prepare_var_and_minio_lvm() {
 
   vg_free=$(vg_free_gib "${ROOT_VG}")
   [[ -n "${vg_free}" ]] || vg_free=0
-  if [[ "${vg_free}" -lt "${VAR_SIZE_G}" ]] 2>/dev/null; then
-    log_warn "LVM: в VG ${ROOT_VG} недостаточно места под /var (нужно ${VAR_SIZE_G}G, свободно ${vg_free}G)."
-    return 1
+
+  if [[ "${VAR_SIZE_G}" -gt 0 ]]; then
+    if [[ "${vg_free}" -lt "${VAR_SIZE_G}" ]] 2>/dev/null; then
+      log_warn "LVM: в VG ${ROOT_VG} недостаточно места под /var (нужно ${VAR_SIZE_G}G, свободно ${vg_free}G)."
+      return 1
+    fi
   fi
 
   minio_g="${MINIO_SIZE_G}"
   min_minio="${MIN_MINIO_G:-15}"
   if [[ "${minio_g}" -gt 0 ]]; then
-    vg_need=$(( VAR_SIZE_G + minio_g ))
-    if [[ "${vg_free}" -lt "${vg_need}" ]] 2>/dev/null; then
-      rem=$(( vg_free - VAR_SIZE_G ))
-      if [[ "${rem}" -ge "${min_minio}" ]]; then
-        log_warn "LVM: MinIO уменьшен с ${minio_g}G до ${rem}G (остаток VG после /var)."
-        minio_g="${rem}"
-      elif [[ "${rem}" -gt 0 ]]; then
-        log_warn "LVM: после /var остаётся ${rem}G — меньше MIN_MINIO_G (${min_minio}), MinIO не создаём."
-        minio_g=0
-      else
-        log_warn "LVM: места под MinIO нет, MinIO пропускаем."
-        minio_g=0
+    if [[ "${VAR_SIZE_G}" -gt 0 ]]; then
+      vg_need=$(( VAR_SIZE_G + minio_g ))
+      if [[ "${vg_free}" -lt "${vg_need}" ]] 2>/dev/null; then
+        rem=$(( vg_free - VAR_SIZE_G ))
+        if [[ "${rem}" -ge "${min_minio}" ]]; then
+          log_warn "LVM: MinIO уменьшен с ${minio_g}G до ${rem}G (остаток VG после /var)."
+          minio_g="${rem}"
+        elif [[ "${rem}" -gt 0 ]]; then
+          log_warn "LVM: после /var остаётся ${rem}G — меньше MIN_MINIO_G (${min_minio}), MinIO не создаём."
+          minio_g=0
+        else
+          log_warn "LVM: места под MinIO нет, MinIO пропускаем."
+          minio_g=0
+        fi
+      fi
+    else
+      if [[ "${vg_free}" -lt "${minio_g}" ]] 2>/dev/null; then
+        rem="${vg_free}"
+        if [[ "${rem}" -ge "${min_minio}" ]]; then
+          log_warn "LVM: MinIO уменьшен с ${minio_g}G до ${rem}G (доступно в VG без отдельного /var)."
+          minio_g="${rem}"
+        elif [[ "${rem}" -gt 0 ]]; then
+          log_warn "LVM: в VG ${rem}G — меньше MIN_MINIO_G (${min_minio}), MinIO не создаём."
+          minio_g=0
+        else
+          log_warn "LVM: места под MinIO нет, MinIO пропускаем."
+          minio_g=0
+        fi
       fi
     fi
   fi
@@ -685,16 +746,18 @@ prepare_var_and_minio_lvm() {
 
   confirm_allow_root_disk_once "LVM: VG ${ROOT_VG}, LV var и при необходимости minio на диске с корнем."
 
-  var_lv=$(lv_path_by_name "${ROOT_VG}" "var")
-  if [[ -z "${var_lv}" ]]; then
-    lvcreate -y -L "${VAR_SIZE_G}G" -n var "${ROOT_VG}"
+  if [[ "${VAR_SIZE_G}" -gt 0 ]]; then
     var_lv=$(lv_path_by_name "${ROOT_VG}" "var")
-  fi
-  [[ -n "${var_lv}" ]] || return 1
+    if [[ -z "${var_lv}" ]]; then
+      lvcreate -y -L "${VAR_SIZE_G}G" -n var "${ROOT_VG}"
+      var_lv=$(lv_path_by_name "${ROOT_VG}" "var")
+    fi
+    [[ -n "${var_lv}" ]] || return 1
 
-  if ! migrate_var_to_partition "${var_lv}"; then
-    log_warn "LVM: перенос /var на ${var_lv} не удалён."
-    return 1
+    if ! migrate_var_to_partition "${var_lv}"; then
+      log_warn "LVM: перенос /var на ${var_lv} не удалён."
+      return 1
+    fi
   fi
 
   setup_minio_lvm "${minio_g}"
@@ -714,18 +777,31 @@ prepare_var_and_minio() {
     return 0
   fi
 
+  if [[ "${VAR_SIZE_G:-0}" -eq 0 ]] && [[ "${MINIO_SIZE_G:-0}" -eq 0 ]]; then
+    log_info "Профиль без отдельных /var и /minio (VAR_SIZE_G=0, MINIO_SIZE_G=0): разметка пропущена; свободный остаток VG будет добавлен к корню на следующем шаге."
+    return 0
+  fi
+
   ensure_root_lvm_metadata || true
 
   if select_target_disk_for_var; then
     log_info "Выбран диск (разделы): ${VAR_DISK}, свободный диапазон: ${VAR_FREE_START}-${VAR_FREE_END} MiB"
     local var_need_mib var_part
     var_need_mib=$(( VAR_SIZE_G * 1024 ))
-    var_part=$(create_partition_from_free_tail "${VAR_DISK}" "var" "${var_need_mib}" || true)
-    if [[ -n "${var_part}" ]] && migrate_var_to_partition "${var_part}"; then
-      setup_minio_partition "${VAR_DISK}"
-      return 0
+    if [[ "${VAR_SIZE_G}" -gt 0 ]]; then
+      var_part=$(create_partition_from_free_tail "${VAR_DISK}" "var" "${var_need_mib}" || true)
+      if [[ -n "${var_part}" ]] && migrate_var_to_partition "${var_part}"; then
+        setup_minio_partition "${VAR_DISK}"
+        return 0
+      fi
+      log_warn "Разделы для /var не созданы или перенос не удался, пробуем LVM в VG ${ROOT_VG:-}."
+    else
+      if [[ "${MINIO_SIZE_G}" -gt 0 ]]; then
+        setup_minio_partition "${VAR_DISK}"
+        return 0
+      fi
+      log_warn "VAR_SIZE_G=0 и MINIO_SIZE_G=0 не ожидались на этом пути, пробуем LVM в VG ${ROOT_VG:-}."
     fi
-    log_warn "Разделы для /var не созданы или перенос не удался, пробуем LVM в VG ${ROOT_VG:-}."
   else
     log_warn "Диск с неразмеченным хвостом >= ${VAR_MIN_FREE_MIB} MiB не найден, пробуем LVM в VG ${ROOT_VG:-}."
   fi
@@ -753,4 +829,5 @@ step_disk_storage() {
 
   expand_root_lv_if_needed
   prepare_var_and_minio
+  expand_root_lv_consume_vg_free
 }
