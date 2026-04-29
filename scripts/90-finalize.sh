@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 #
 # Шаг 90 — после пакетов и «make install-deps» повторный distro-sync, смоук-тесты
-# критичных сервисов и итоговая подсказка с командой запуска stage1 вручную.
+# критичных сервисов, интерактивное «make update-sysuser» в корне клона и только
+# затем итоговая подсказка с командой запуска stage1 вручную.
 # Никаких systemd-юнитов и автоматических переходов; stage1/stage2/runtime
 # запускаются пользователем через make в корне клона.
 
@@ -54,6 +55,27 @@ verify_critical_services() {
   log_info "Критичные проверки пройдены."
 }
 
+# Вызывает «make update-sysuser» в каталоге клона (интерактивно: имя и пароль
+# администратора в vars/all.yml). Подсказка про stage1 выводится только после
+# этого шага.
+#
+# @globals PULL_DIR REPO_URL REF_VALUE ENV_VALUE
+# @return код возврата make update-sysuser
+# @exit   через fail, если нет Makefile
+run_update_sysuser() {
+  section "Системный администратор: make update-sysuser"
+  local mk="${PULL_DIR}/Makefile"
+  [[ -f "${mk}" ]] || fail "Не найден ${mk}. В корне приватного репозитория должен быть Makefile (цель update-sysuser)."
+  (
+    cd "${PULL_DIR}"
+    export REPO_URL="${REPO_URL}"
+    export REF="${REF_VALUE}"
+    export ENV="${ENV_VALUE}"
+    export PULL_DIR="${PULL_DIR}"
+    make update-sysuser
+  )
+}
+
 # Печатает итоговую подсказку с командой запуска stage1 вручную.
 #
 # @globals PULL_DIR ENV_VALUE SKIP_ANSIBLE
@@ -80,5 +102,6 @@ print_next_step_hint() {
 step_finalize() {
   distro_sync_system
   verify_critical_services
+  run_update_sysuser
   print_next_step_hint
 }

@@ -5,9 +5,10 @@
 # Назначение:
 #   Один сценарий верхнего уровня для подготовки ОС: dnf-пакеты, диски, swap,
 #   SSH-ключ для git, клон приватного репозитория с плейбуками в PULL_DIR и
-#   установка зависимостей Ansible (make install-deps в корне клона). Запуск
-#   фазы stage1 (и далее stage2/runtime) — отдельный ручной шаг, скрипт лишь
-#   печатает подсказку с командой.
+#   установка зависимостей Ansible (make install-deps в корне клона). После
+#   distro-sync и проверок выполняется make update-sysuser (имя/пароль админа);
+#   запуск фазы stage1 (и далее stage2/runtime) — отдельный ручной шаг,
+#   скрипт лишь печатает подсказку с командой после этого.
 #
 # Порядок шагов (не менять без обновления README и зависимостей между шагами):
 #   10  root/dnf/утилиты
@@ -17,7 +18,8 @@
 #   40  диски, swap, при необходимости /var и /minio
 #   50  git clone/fetch в PULL_DIR
 #   70  make install-deps в PULL_DIR (контракт с приватным репо)
-#   90  distro-sync, проверка sshd / NetworkManager и подсказка про make stage1
+#   90  distro-sync, проверка sshd / NetworkManager, make update-sysuser,
+#       затем подсказка про make stage1
 #
 # Конфигурация:
 #   Корневой .env (см. scripts/lib/load-env.sh) — единственный файл настроек.
