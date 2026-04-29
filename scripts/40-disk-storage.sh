@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
 # Шаг 40 — разметка и точки монтирования под инфраструктуру (LVM, отдельный /var, /minio).
-# Параметры: DISK_VARS_*, MAIN_DISK_DEVICE, переменные профиля (см. README).
+# Параметры: DISK_VARS_*, MAIN_DISK_DEVICE, DISK_PROFILE_USE_MATRIX, матрица config/disk-profiles.sh (см. README).
 # Зависит от scripts/lib/common.sh. Логика объёмная — смотрите имена функций ниже по файлу.
 
 # Добавляет одну строку в /etc/fstab, если такой точной строки ещё нет.
@@ -181,12 +181,18 @@ resolve_disk_size_group() {
   fi
 }
 
-# Загружает параметры дисков: локальный DISK_VARS_FILE или shallow-клон репозитория.
+_INFRA_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "${_INFRA_REPO_ROOT}/config/disk-profiles.sh"
+unset _INFRA_REPO_ROOT
+
+# Загружает параметры дисков: матрица по DISK_SIZE_G, затем локальный DISK_VARS_FILE или shallow-клон репозитория.
 #
-# @globals DISK_VARS_FILE DISK_PROFILE_FETCH_FROM_REPO DISK_VARS_REPO_PATH REF_VALUE REPO_URL
+# @globals DISK_VARS_FILE DISK_PROFILE_FETCH_FROM_REPO DISK_VARS_REPO_PATH REF_VALUE REPO_URL DISK_PROFILE_USE_MATRIX
 # @return 0
 load_disk_profile() {
   section "Профиль дисков"
+  apply_disk_profile_matrix
   log_info "Основной диск: ${MAIN_DISK:-?}, размер ~${DISK_SIZE_G:-?}G, профиль ${DISK_SIZE_GROUP}G"
 
   if [[ -f "${DISK_VARS_FILE}" ]]; then

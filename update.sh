@@ -8,7 +8,7 @@
 # Запуск из корня клона infrastructure-public (рядом с этим файлом):
 #   sudo bash update.sh
 #
-# Конфигурация: корневой .env — PUBLIC_REPO_URL, PUBLIC_REF, REPO_URL, REF, PULL_DIR, INFRA_SSH_*.
+# Конфигурация: config/*.env — PUBLIC_REPO_URL, PUBLIC_REF, REPO_URL, REF, PULL_DIR, INFRA_SSH_*.
 # Логика SSH как в start.sh (шаг 30): github.com HTTPS → git@…, deploy key, GIT_SSH_COMMAND.
 
 set -euo pipefail
@@ -28,7 +28,7 @@ prepare_ssh_for_infra_repos
 
 sync_public_repository() {
   section "Публичный репозиторий"
-  [[ -n "${PUBLIC_REPO_URL:-}" ]] || fail "Задайте PUBLIC_REPO_URL в .env или окружении."
+  [[ -n "${PUBLIC_REPO_URL:-}" ]] || fail "Задайте PUBLIC_REPO_URL в config/repos.env или окружении."
 
   log_info "Обновление ${ROOT} <- ${PUBLIC_REPO_URL} (${PUBLIC_REF_VALUE})"
   if [[ ! -d "${ROOT}/.git" ]]; then

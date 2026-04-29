@@ -22,7 +22,7 @@
 #       затем подсказка про make stage1
 #
 # Конфигурация:
-#   Корневой .env (см. scripts/lib/load-env.sh) — единственный файл настроек.
+#   Каталог config/*.env (см. scripts/lib/load-env.sh).
 #   Переопределение — переменными окружения перед запуском:
 #   ENV=stage REF=main REPO_URL=... bash start.sh
 #
