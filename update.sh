@@ -9,7 +9,7 @@
 #   sudo bash update.sh
 #
 # Конфигурация: config/*.env — PUBLIC_REPO_URL, PUBLIC_REF, REPO_URL, REF, PULL_DIR, INFRA_SSH_*.
-# Логика SSH как в start.sh (шаг 30): github.com HTTPS → git@…, deploy key, GIT_SSH_COMMAND.
+# Логика SSH как в start.sh (шаг 40): github.com HTTPS → git@…, deploy key, GIT_SSH_COMMAND.
 
 set -euo pipefail
 
@@ -19,8 +19,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT}/scripts/lib/load-env.sh"
 # shellcheck source=scripts/lib/common.sh
 source "${ROOT}/scripts/lib/common.sh"
-# shellcheck source=scripts/30-ssh-deploy-key.sh
-source "${ROOT}/scripts/30-ssh-deploy-key.sh"
+# shellcheck source=scripts/40-ssh-deploy-key.sh
+source "${ROOT}/scripts/40-ssh-deploy-key.sh"
 # shellcheck source=scripts/50-sync-repository.sh
 source "${ROOT}/scripts/50-sync-repository.sh"
 

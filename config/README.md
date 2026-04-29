@@ -20,7 +20,7 @@
 4. `config/galaxy.env`
 5. `config/disk.env`
 
-Матрица профилей разметки по размеру диска для шага 40 задаётся в **`config/disk-profiles.sh`** (подключается из `scripts/40-disk-storage.sh`, не через `load-env.sh`).
+Матрица профилей разметки по размеру диска для шага 20 задаётся в **`config/disk-profiles.sh`** (подключается из `scripts/20-disk-storage.sh`, не через `load-env.sh`).
 
 ## Подключение
 

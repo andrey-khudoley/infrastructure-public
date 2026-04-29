@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 #
-# Шаг 40 — разметка и точки монтирования под инфраструктуру (LVM, отдельный /var, /minio).
+# Шаг 20 — разметка и точки монтирования под инфраструктуру (LVM, отдельный /var, /minio).
 # Параметры: DISK_VARS_*, MAIN_DISK_DEVICE, DISK_PROFILE_USE_MATRIX, матрица config/disk-profiles.sh (см. README).
 # Зависит от scripts/lib/common.sh. Логика объёмная — смотрите имена функций ниже по файлу.
 
@@ -186,14 +186,19 @@ _INFRA_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${_INFRA_REPO_ROOT}/config/disk-profiles.sh"
 unset _INFRA_REPO_ROOT
 
-# Загружает параметры дисков: матрица по DISK_SIZE_G, затем локальный DISK_VARS_FILE или shallow-клон репозитория.
+# Загружает параметры дисков: матрица по DISK_SIZE_G и при наличии локальный DISK_VARS_FILE.
+# Загрузку профиля shallow-клоном откладывает до `fetch_disk_profile_from_repo_if_needed` после swap,
+# чтобы не вызывать dnf до включения подкачки.
 #
-# @globals DISK_VARS_FILE DISK_PROFILE_FETCH_FROM_REPO DISK_VARS_REPO_PATH REF_VALUE REPO_URL DISK_PROFILE_USE_MATRIX
+# @globals DISK_VARS_FILE DISK_PROFILE_FETCH_FROM_REPO DISK_VARS_REPO_PATH DISK_PROFILE_USE_MATRIX
+# @globals _INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED — 1, если нужен вызов fetch_disk_profile_from_repo_if_needed
 # @return 0
 load_disk_profile() {
   section "Профиль дисков"
   apply_disk_profile_matrix
   log_info "Основной диск: ${MAIN_DISK:-?}, размер ~${DISK_SIZE_G:-?}G, профиль ${DISK_SIZE_GROUP}G"
+
+  _INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED=0
 
   if [[ -f "${DISK_VARS_FILE}" ]]; then
     log_info "Найден локальный файл параметров: ${DISK_VARS_FILE}"
@@ -207,7 +212,20 @@ load_disk_profile() {
     return 0
   fi
 
-  log_warn "Локальный файл ${DISK_VARS_FILE} не найден, пробуем загрузить из репозитория (DISK_PROFILE_FETCH_FROM_REPO=1)."
+  log_warn "Локальный файл ${DISK_VARS_FILE} не найден; загрузка из репозитория выполнится после включения swap (DISK_PROFILE_FETCH_FROM_REPO=1)."
+  _INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED=1
+  return 0
+}
+
+# Дополняет профиль из shallow-клона после swap (git и dnf только здесь).
+#
+# @globals _INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED DISK_VARS_FILE DISK_VARS_REPO_PATH REF_VALUE REPO_URL
+# @return 0
+fetch_disk_profile_from_repo_if_needed() {
+  [[ "${_INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED:-0}" == "1" ]] || return 0
+
+  section "Профиль дисков из репозитория"
+  log_info "Загрузка ${DISK_VARS_REPO_PATH} из ${REPO_URL} (ветка ${REF_VALUE})."
   has_cmd git || dnf_install git
 
   local tmp_dir
@@ -227,6 +245,7 @@ load_disk_profile() {
     log_warn "Не удалось клонировать репозиторий для профиля дисков, используются defaults."
   fi
   rm -rf "${tmp_dir}"
+  _INFRA_DISK_PROFILE_FETCH_FROM_REPO_NEEDED=0
 }
 
 # Задаёт значения по умолчанию для ROOT_TARGET_G, VAR_*, SWAP, MINIO и валидирует числа.
@@ -688,6 +707,8 @@ prepare_var_and_minio_lvm() {
 prepare_var_and_minio() {
   section "Разметка /var и /minio"
 
+  has_cmd parted || dnf_install parted
+
   if [[ "$(findmnt -n -o TARGET /var 2>/dev/null || true)" == "/var" ]]; then
     log_info "/var уже на отдельном разделе ($(findmnt -n -o SOURCE /var 2>/dev/null || true))."
     return 0
@@ -717,7 +738,7 @@ prepare_var_and_minio() {
   return 0
 }
 
-# Точка входа шага 40: профиль дисков, swap, root LV, /var и /minio.
+# Точка входа шага 20: профиль дисков, swap, root LV, /var и /minio.
 #
 # @return 0
 step_disk_storage() {
@@ -727,6 +748,9 @@ step_disk_storage() {
   apply_disk_defaults
 
   ensure_swap
+  fetch_disk_profile_from_repo_if_needed
+  apply_disk_defaults
+
   expand_root_lv_if_needed
   prepare_var_and_minio
 }

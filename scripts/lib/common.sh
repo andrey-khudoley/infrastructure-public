@@ -4,7 +4,7 @@
 #
 # git_repo — обёртка над git с отключённым credential.helper, чтобы clone/fetch по HTTPS
 # не блокировались интерактивным запросом пароля в неинтерактивном bootstrap.
-# normalize_github_https_var_to_ssh / normalize_github_https_repo_url — github.com HTTPS → git@… (шаг 30, update.sh)
+# normalize_github_https_var_to_ssh / normalize_github_https_repo_url — github.com HTTPS → git@… (шаг 40, update.sh)
 # dnf_install / distro_sync_system — единообразные вызовы dnf для шагов 20 и 90.
 
 log_info() { echo "[+] $*"; }

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 #
-# Шаг 20 — базовые пакеты и выравнивание репозиториев (distro-sync).
+# Шаг 30 — базовые пакеты и выравнивание репозиториев (distro-sync).
 #
 # Единый контур Ansible: ansible-core и коллекции ставятся в приватном репо из
 # constraints.txt (scripts/install-python-deps.sh) и collections/requirements.yml
@@ -24,7 +24,7 @@ install_base_packages() {
   fi
 }
 
-# Шаг 20: пакеты и первый distro-sync (второй — в шаге 90).
+# Шаг 30: пакеты и первый distro-sync (второй — в шаге 90).
 #
 # @return 0
 step_install_packages() {

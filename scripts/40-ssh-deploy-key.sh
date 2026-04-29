@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 #
-# Шаг 30 — при необходимости приведение github.com HTTPS в REPO_URL к git@…, затем SSH-ключ (deploy key).
+# Шаг 40 — при необходимости приведение github.com HTTPS в REPO_URL к git@…, затем SSH-ключ (deploy key).
 # Если после этого REPO_URL остаётся HTTPS, ключ не создаётся (токен/credential helper для git).
 
 # Проверяет, является ли строка SSH-URL для git (git@… или ssh://…).

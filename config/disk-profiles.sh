@@ -1,9 +1,9 @@
 # shellcheck shell=bash
 #
-# Матрица профилей разметки по размеру основного диска (шаг 40).
-# Подключается из scripts/40-disk-storage.sh после scripts/lib/common.sh (нужен log_info).
+# Матрица профилей разметки по размеру основного диска (шаг 20).
+# Подключается из scripts/20-disk-storage.sh после scripts/lib/common.sh (нужен log_info).
 #
-# Границы по целому DISK_SIZE_G (GiB), см. resolve_disk_size_group в 40-disk-storage.sh.
+# Границы по целому DISK_SIZE_G (GiB), см. resolve_disk_size_group в 20-disk-storage.sh.
 #
 # Диапазон GiБ | ROOT_TARGET_G | VAR_SIZE_G | MINIO_SIZE_G | SWAP_SIZE_G | VAR_MIN_FREE_MIB
 # 2–20         | g−1           | 0          | 0            | 1           | 1024  (1 GiB под swap, остальное под корень)
