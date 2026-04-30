@@ -19,6 +19,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT}/scripts/lib/load-env.sh"
 # shellcheck source=scripts/lib/common.sh
 source "${ROOT}/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/require-bootstrap-config.sh
+source "${ROOT}/scripts/lib/require-bootstrap-config.sh"
+
+require_bootstrap_config_files
 # shellcheck source=scripts/40-ssh-deploy-key.sh
 source "${ROOT}/scripts/40-ssh-deploy-key.sh"
 # shellcheck source=scripts/50-sync-repository.sh

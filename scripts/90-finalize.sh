@@ -85,11 +85,13 @@ print_next_step_hint() {
   if [[ "${SKIP_ANSIBLE}" == "1" ]]; then
     log_info "SKIP_ANSIBLE=1: установите зависимости вручную и запустите stage1:"
     echo "    cd ${PULL_DIR}"
+    echo "    sudo make init"
     echo "    sudo make install-deps"
     echo "    sudo make stage1 ENV=${ENV_VALUE}"
   else
-    log_info "Подготовка завершена. Запустите фазу stage1:"
+    log_info "Подготовка завершена. Разверните config из шаблонов и запустите фазу stage1:"
     echo "    cd ${PULL_DIR}"
+    echo "    sudo make init"
     echo "    sudo make stage1 ENV=${ENV_VALUE}"
   fi
   echo

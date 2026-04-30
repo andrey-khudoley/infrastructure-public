@@ -23,8 +23,9 @@
 #       затем подсказка про make stage1
 #
 # Конфигурация:
-#   Каталог config/*.env (см. scripts/lib/load-env.sh).
-#   Переопределение — переменными окружения перед запуском:
+#   После git clone: make init — копирует config/*.example в рабочие *.env и disk.env.
+#   Затем при необходимости правка config/ и запуск (см. scripts/lib/load-env.sh).
+#   Переопределение отдельных ключей — переменными окружения перед запуском:
 #   ENV=stage REF=main REPO_URL=... bash start.sh
 #
 # Ограничение:
@@ -41,6 +42,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT}/scripts/lib/load-env.sh"
 # shellcheck source=scripts/lib/common.sh
 source "${ROOT}/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/require-bootstrap-config.sh
+source "${ROOT}/scripts/lib/require-bootstrap-config.sh"
 # shellcheck source=scripts/10-require-runtime.sh
 source "${ROOT}/scripts/10-require-runtime.sh"
 # shellcheck source=scripts/20-disk-storage.sh

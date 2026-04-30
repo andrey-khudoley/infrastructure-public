@@ -1,2 +1,6 @@
-# Переопределения матрицы дисков — создаётся локально из disk.env.example
+# Рабочие конфиги — создаются на узле из *.example (`make init`), в git только шаблоны
 config/disk.env
+config/host.env
+config/repos.env
+config/ssh.env
+config/galaxy.env

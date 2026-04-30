@@ -21,4 +21,5 @@ require_runtime() {
 # @return 0
 step_require_runtime() {
   require_runtime
+  require_bootstrap_config_files
 }

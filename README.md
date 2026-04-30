@@ -18,17 +18,18 @@
 ## Алгоритм вызова
 
 1. **Склонировать этот репозиторий целиком** (нужны `start.sh` и каталог `scripts/` с библиотеками и шагами; одного `start.sh` недостаточно).
-2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`. При необходимости отредактировать **`config/host.env`**, **`config/repos.env`** и другие файлы в **`config/`** (см. [config/README.md](config/README.md) и таблицу ниже).
+2. **Перейти в корень клона** — туда, где лежат `start.sh` и `scripts/`. Выполнить **`make init`** (копирует шаблоны `config/*.example` в рабочие `config/*.env` и `config/disk.env` с перезаписью). При необходимости отредактировать файлы в **`config/`** (см. [config/README.md](config/README.md) и таблицу ниже).
 3. **Запустить оркестратор от root** с переменными окружения (ниже примеры). Удобно: `sudo bash` или `sudo env … bash start.sh`.
 4. После завершения `start.sh` (включая интерактивное **`make update-sysuser`** на шаге **90**) напечатает подсказку — вручную выполнить `cd $PULL_DIR && sudo make stage1 ENV=$ENV`.
 5. По окончании `make stage1` будет напечатана подсказка про `make stage2` (если `stage1` потребовал ребут — после загрузки выполнить `make stage2` вручную).
 6. Аналогично после `make stage2` появится подсказка про `make runtime` (запускается по необходимости — никаких таймеров).
 
-Минимальный пример с **дефолтами из `config/*.env`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **40** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
+Минимальный пример с **дефолтами из `config/*.env`** после **`make init`** (ветка `main`, окружение `stage`; **`REPO_URL`** по умолчанию — HTTPS на GitHub, в шаге **40** он приводится к **`git@github.com:…`**, затем выводится deploy key — добавьте его в репозиторий на GitHub):
 
 ```bash
 git clone https://github.com/andrey-khudoley/infrastructure-public.git
 cd infrastructure-public
+make init
 sudo env ENV=stage REF=main bash start.sh
 # по окончании:
 cd /var/lib/infra/src        # PULL_DIR из config/host.env
@@ -40,6 +41,7 @@ sudo make runtime ENV=stage  # по необходимости
 Типичный вариант для **приватного** репо на GitHub **без** токена в URL — явный **`git@…`** и deploy key (шаг **40** создаст ключ и покажет публичную часть):
 
 ```bash
+make init
 sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
@@ -161,14 +163,7 @@ COLLECTIONS_REQ=/var/lib/infra/src/collections/requirements.yml \
 
 ### Переопределение матрицы дисков
 
-По умолчанию шаг **20** использует только **`config/disk-profiles.sh`**. Чтобы задать свои числа или **`MAIN_DISK_DEVICE`**, в **клоне публичного репозитория** выполните:
-
-```bash
-cp config/disk.env.example config/disk.env
-$EDITOR config/disk.env
-```
-
-Файл **`config/disk.env`** в **`.gitignore`** — не попадёт в общий коммит; при **`git pull`** локальная копия на диске сохраняется. Затем запускайте **`start.sh`** из того же клона.
+По умолчанию шаг **20** использует только **`config/disk-profiles.sh`**. Файл **`config/disk.env`** создаётся при **`make init`** из **`disk.env.example`**; при необходимости отредактируйте **`config/disk.env`** перед **`start.sh`**. Рабочие **`config/*.env`** и **`disk.env`** в **`.gitignore`** — в git только шаблоны `*.example`.
 
 Явно указать блочное устройство для расчёта профиля (без файла, одной переменной окружения):
 
@@ -191,13 +186,16 @@ sudo bash update.sh
 
 ```
 ├── README.md
-├── .gitignore               # в т.ч. config/disk.env (локальные переопределения матрицы)
-├── config/                  # модульная конфигурация (*.env), disk.env.example; см. config/README.md
+├── Makefile                 # make init — развернуть config из *.example
+├── .gitignore               # рабочие config/*.env и disk.env (на узле после make init)
+├── config/                  # шаблоны *.example, disk-profiles.sh; см. config/README.md
 ├── start.sh                 # оркестратор: комментарии в шапке; source lib и scripts/NN-*.sh; step_*()
 ├── update.sh                # обновить оба клона (git); дальше вручную `make runtime` в приватном
 ├── scripts/
+│   ├── init-config.sh       # копирование *.example → рабочие имена (вызывается из make init)
 │   ├── lib/
-│   │   ├── load-env.sh      # читает config/*.env (в т.ч. опциональный disk.env); env побеждает config; ENV_VALUE/…
+│   │   ├── load-env.sh      # читает config/*.env (в т.ч. disk.env); env побеждает config; ENV_VALUE/…
+│   │   ├── require-bootstrap-config.sh  # проверка наличия рабочих *.env перед start/update
 │   │   └── common.sh        # логирование, dnf, git, distro-sync (общее для шагов)
 │   ├── 10-require-runtime.sh
 │   ├── 20-disk-storage.sh
@@ -210,7 +208,7 @@ sudo bash update.sh
 
 ## Миграция с корневого `.env`
 
-Раньше настройки лежали в одном файле `.env` в корне клона. Теперь они разнесены по **`config/*.env`**. После `git pull` на уже развёрнутом узле перенесите строки из старого `.env` в соответствующие файлы:
+Раньше настройки лежали в одном файле `.env` в корне клона. Теперь они разнесены по **`config/*.env`** (рабочие файлы создаются **`make init`** из шаблонов **`*.example`**). После `git pull` на уже развёрнутом узле перенесите строки из старого `.env` в соответствующие файлы (или заново **`make init`** и перенос вручную — перезапишет локальные конфиги):
 
 | Было в `.env` | Куда |
 |---------------|------|
@@ -222,17 +220,17 @@ sudo bash update.sh
 
 ## Переменные окружения
 
-Приоритет: **переменные окружения** (в т.ч. `sudo env KEY=…`) **>** строки в **`config/*.env`**. Файлы в **`config/`** коммитятся в репозиторий; секреты туда не кладём.
+Приоритет: **переменные окружения** (в т.ч. `sudo env KEY=…`) **>** строки в **`config/*.env`**. В git коммитятся только шаблоны **`config/*.example`**; рабочие **`config/*.env`** и **`disk.env`** на узле не коммитятся (**`.gitignore`**). Секреты в шаблоны не кладём.
 
 ### Файлы в `config/`
 
-| Файл | Назначение |
-|------|------------|
-| [config/host.env](config/host.env) | `ENV`, `PULL_DIR`, `SKIP_ANSIBLE` |
-| [config/repos.env](config/repos.env) | `PUBLIC_REPO_URL`, `PUBLIC_REF`, `REPO_URL`, `REF` |
-| [config/ssh.env](config/ssh.env) | `INFRA_SSH_KEY`, `INFRA_SSH_KEY_COMMENT`, `INFRA_SSH_SKIP_PROMPT` |
-| [config/galaxy.env](config/galaxy.env) | `GALAXY_*`, опционально `COLLECTIONS_REQ` |
-| [config/disk.env.example](config/disk.env.example) | Образец **`config/disk.env`** — переопределения матрицы **`config/disk-profiles.sh`** (файл **`disk.env`** в **`.gitignore`**, в git только образец) |
+| Файл в репозитории (шаблон) | Рабочий файл после `make init` | Назначение |
+|------|------|------------|
+| [config/host.env.example](config/host.env.example) | `config/host.env` | `ENV`, `PULL_DIR`, `SKIP_ANSIBLE` |
+| [config/repos.env.example](config/repos.env.example) | `config/repos.env` | `PUBLIC_REPO_URL`, `PUBLIC_REF`, `REPO_URL`, `REF` |
+| [config/ssh.env.example](config/ssh.env.example) | `config/ssh.env` | `INFRA_SSH_KEY`, `INFRA_SSH_KEY_COMMENT`, `INFRA_SSH_SKIP_PROMPT` |
+| [config/galaxy.env.example](config/galaxy.env.example) | `config/galaxy.env` | `GALAXY_*`, опционально `COLLECTIONS_REQ` |
+| [config/disk.env.example](config/disk.env.example) | `config/disk.env` | Переопределения матрицы **`config/disk-profiles.sh`** |
 
 Подробнее — [config/README.md](config/README.md).
 
