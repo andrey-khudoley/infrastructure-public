@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 #
-# Общие утилиты для шагов start.sh (подключается сразу после load-env.sh).
+# Общие утилиты для шагов make start (подключается сразу после load-env.sh).
 #
 # git_repo — обёртка над git с отключённым credential.helper, чтобы clone/fetch по HTTPS
 # не блокировались интерактивным запросом пароля в неинтерактивном bootstrap.
-# normalize_github_https_var_to_ssh / normalize_github_https_repo_url — github.com HTTPS → git@… (шаг 40, update.sh)
+# normalize_github_https_var_to_ssh / normalize_github_https_repo_url — github.com HTTPS → git@… (шаг 40, make update)
 # dnf_install / distro_sync_system — единообразные вызовы dnf для шагов 20 и 90.
 
 log_info() { echo "[+] $*"; }
@@ -56,4 +56,11 @@ distro_sync_system() {
   section "Синхронизация с репозиториями (distro-sync)"
   log_info "dnf distro-sync — полное выравнивание системы с доступными репозиториями."
   dnf distro-sync -y
+}
+
+# Позиционные параметры из «make <цель> ARGS='…'» (проброс в bash run-скрипта).
+# Типовые параметры bootstrap/sync задаются переменными окружения, см. README.
+log_forwarded_make_args() {
+  [[ "$#" -eq 0 ]] && return 0
+  log_info "Позиционные параметры из Makefile ARGS: $* — сценарий их не разбирает; используйте переменные окружения."
 }

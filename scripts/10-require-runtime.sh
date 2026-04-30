@@ -16,7 +16,7 @@ require_runtime() {
   done
 }
 
-# Точка входа шага 10 для start.sh.
+# Точка входа шага 10 для make start (scripts/run-start.sh).
 #
 # @return 0
 step_require_runtime() {

@@ -52,7 +52,7 @@ ensure_infra_deploy_key() {
   export GIT_SSH_COMMAND="ssh -i \"${INFRA_SSH_KEY}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 }
 
-# Нормализация github.com HTTPS → git@… и подготовка deploy key (как для start.sh, так и для update.sh).
+# Нормализация github.com HTTPS → git@… и подготовка deploy key (как для make start, так и для make update).
 #
 # @globals REPO_URL PUBLIC_REPO_URL
 # @return 0
@@ -62,7 +62,7 @@ prepare_ssh_for_infra_repos() {
   ensure_infra_deploy_key
 }
 
-# Точка входа шага 30 для start.sh.
+# Точка входа шага 30 для make start (scripts/run-start.sh).
 #
 # @return 0
 step_ssh_deploy_key() {
