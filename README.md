@@ -2,7 +2,7 @@
 
 **Репозиторий:** [https://github.com/andrey-khudoley/infrastructure-public.git](https://github.com/andrey-khudoley/infrastructure-public.git)
 
-Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: диски и swap, пакеты, клон **приватного** репозитория с плейбуками и установка зависимостей Ansible (Python `.venv` из `constraints.txt` + коллекции Galaxy в `collections/ansible_collections`). Единый контур версий: **никаких** параллельных установок ansible-core из dnf.
+Репозиторий содержит цепочку shell-скриптов для подготовки **dnf**-системы под инфраструктурный Ansible: диски и swap, пакеты, клон **приватного** репозитория с плейбуками и установка зависимостей Ansible (Python `.venv` из `config/constraints.txt` + коллекции Galaxy в `collections/ansible_collections`). Единый контур версий: **никаких** параллельных установок ansible-core из dnf.
 
 Запуск самих фаз `stage1` → `stage2` → `runtime` — это **отдельные ручные шаги** на стороне приватного репозитория (`make stage1`, затем `make stage2`, затем при необходимости `make runtime`). Никаких systemd-юнитов и автоматических переходов между фазами bootstrap **не используется**: после `make install-deps` шаг **90** вызывает интерактивное **`make update-sysuser`** (имя и пароль администратора в `vars/all.yml`), затем `make start` печатает подсказку с командой запуска `stage1`.
 
@@ -68,7 +68,7 @@ sudo env ENV=stage REF=main REPO_URL=git@github.com:andrey-khudoley/infrastructu
 make -C "${PULL_DIR}" install-deps
 ```
 
-`install-deps` сначала создаёт `.venv` и ставит из `constraints.txt` закреплённый `ansible-core` и Python-зависимости (`scripts/install-python-deps.sh`), затем устанавливает коллекции Galaxy (офлайн-кэш + `--offline`) в repo-local путь `collections/ansible_collections`. На шаге **90** (`scripts/90-finalize.sh`) выполняются повторный `distro-sync`, проверки **sshd**/при необходимости **NetworkManager** и интерактивное **`make update-sysuser`** в корне клона (имя и пароль системного администратора в `vars/all.yml`). **Сам `ansible-playbook` bootstrap не запускает** — фазы `stage1`, `stage2`, `runtime` инициирует пользователь вручную через `make stage1`/`make stage2`/`make runtime` уже в каталоге клона после подсказки.
+`install-deps` сначала создаёт `.venv` и ставит из `config/constraints.txt` закреплённый `ansible-core` и Python-зависимости (`scripts/install-python-deps.sh`), затем устанавливает коллекции Galaxy (офлайн-кэш + `--offline`) в repo-local путь `collections/ansible_collections`. На шаге **90** (`scripts/90-finalize.sh`) выполняются повторный `distro-sync`, проверки **sshd**/при необходимости **NetworkManager** и интерактивное **`make update-sysuser`** в корне клона (имя и пароль системного администратора в `vars/all.yml`). **Сам `ansible-playbook` bootstrap не запускает** — фазы `stage1`, `stage2`, `runtime` инициирует пользователь вручную через `make stage1`/`make stage2`/`make runtime` уже в каталоге клона после подсказки.
 
 В процесс **make** передаётся такое окружение (имена переменных — часть контракта с приватным репозиторием):
 
@@ -331,7 +331,7 @@ sudo env ENV=stage REF=main make git-private  # только private sync
 
 1. Устанавливает базовые пакеты через `dnf`:
    - при **`SKIP_ANSIBLE=1`**: `epel-release`, `git`, `curl`, `parted`;
-   - иначе: `epel-release`, `git`, `curl`, `parted`, **`make`** (нужен для целей **`install-deps`** и фаз **`stage1`/`stage2`/`runtime`** приватного **Makefile**). **`ansible-core` из dnf не ставится** — единый контур: ansible-core и коллекции ставятся в приватном `.venv` из `constraints.txt` / `collections/requirements.yml`.
+   - иначе: `epel-release`, `git`, `curl`, `parted`, **`make`** (нужен для целей **`install-deps`** и фаз **`stage1`/`stage2`/`runtime`** приватного **Makefile**). **`ansible-core` из dnf не ставится** — единый контур: ansible-core и коллекции ставятся в приватном `.venv` из `config/constraints.txt` / `collections/requirements.yml`.
 
 2. Выполняет **`dnf distro-sync -y`** — выравнивание версий установленных пакетов с репозиториями (в т.ч. после подключения EPEL).
 
@@ -376,7 +376,7 @@ sudo env ENV=stage REF=main make git-private  # только private sync
 
 ```bash
 cd PULL_DIR
-make install-deps    # .venv из constraints.txt + коллекции Galaxy в collections/ansible_collections
+make install-deps    # .venv из config/constraints.txt + коллекции Galaxy в collections/ansible_collections
 ```
 
 Запуск **самих фаз** Ansible (`stage1`, `stage2`, `runtime`) на этом шаге **не делается**: пользователь запускает их вручную через `make stage1`/`make stage2`/`make runtime` в каталоге клона. В окружение `make install-deps` передаются **`REPO_URL`**, **`REF`**, **`ENV`**, **`PULL_DIR`**, а также **`GALAXY_*`** и при необходимости **`COLLECTIONS_REQ`** (по умолчанию `PULL_DIR/collections/requirements.yml`).

@@ -4,7 +4,7 @@
 #
 # В корне клона должен быть Makefile с целью «install-deps»:
 #
-#   make -C "${PULL_DIR}" install-deps   # .venv (constraints.txt) + Galaxy-коллекции
+#   make -C "${PULL_DIR}" install-deps   # .venv (config/constraints.txt) + Galaxy-коллекции
 #
 # Запуск ansible-playbook (фазы stage1/stage2/runtime) — отдельный ручной шаг
 # пользователя через `make stage1 ENV=...` в корне клона. Никаких systemd
@@ -12,7 +12,7 @@
 #
 # Контракт с приватным репозиторием:
 #   • В корне клона должен быть Makefile с целью «install-deps».
-#   • Цель «install-deps» создаёт .venv с ansible-core (constraints.txt) и
+#   • Цель «install-deps» создаёт .venv с ansible-core (config/constraints.txt) и
 #     устанавливает коллекции Galaxy.
 #
 # Окружение для make (экспорт перед вызовом):

@@ -3,7 +3,7 @@
 # Шаг 30 — базовые пакеты и выравнивание репозиториев (distro-sync).
 #
 # Единый контур Ansible: ansible-core и коллекции ставятся в приватном репо из
-# constraints.txt (scripts/install-python-deps.sh) и collections/requirements.yml
+# config/constraints.txt (scripts/install-python-deps.sh) и collections/requirements.yml
 # (scripts/galaxy-offline-install.sh), поэтому здесь НЕ ставим ansible-core из
 # dnf — чтобы не получить две разные версии в PATH. Python >= 3.12 при
 # необходимости ставит install-python-deps.sh сам через dnf.
