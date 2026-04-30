@@ -159,16 +159,18 @@ COLLECTIONS_REQ=/var/lib/infra/src/collections/requirements.yml \
   ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
 ```
 
-### Профиль дисков из файла
+### Переопределение матрицы дисков
 
-Локальный профиль уже лежит на машине:
+По умолчанию шаг **20** использует только **`config/disk-profiles.sh`**. Чтобы задать свои числа или **`MAIN_DISK_DEVICE`**, в **клоне публичного репозитория** выполните:
 
 ```bash
-DISK_VARS_FILE=/etc/infra/bootstrap-disk.env \
-  ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
+cp config/disk.env.example config/disk.env
+$EDITOR config/disk.env
 ```
 
-Явно указать блочное устройство для расчёта профиля:
+Файл **`config/disk.env`** в **`.gitignore`** — не попадёт в общий коммит; при **`git pull`** локальная копия на диске сохраняется. Затем запускайте **`start.sh`** из того же клона.
+
+Явно указать блочное устройство для расчёта профиля (без файла, одной переменной окружения):
 
 ```bash
 MAIN_DISK_DEVICE=/dev/sda ENV=stage REPO_URL=git@github.com:andrey-khudoley/infrastructure-private.git bash start.sh
@@ -189,12 +191,13 @@ sudo bash update.sh
 
 ```
 ├── README.md
-├── config/                  # модульная конфигурация (*.env); см. config/README.md
+├── .gitignore               # в т.ч. config/disk.env (локальные переопределения матрицы)
+├── config/                  # модульная конфигурация (*.env), disk.env.example; см. config/README.md
 ├── start.sh                 # оркестратор: комментарии в шапке; source lib и scripts/NN-*.sh; step_*()
 ├── update.sh                # обновить оба клона (git); дальше вручную `make runtime` в приватном
 ├── scripts/
 │   ├── lib/
-│   │   ├── load-env.sh      # читает config/*.env; env побеждает config; ENV_VALUE/REF_VALUE/PUBLIC_REF_VALUE
+│   │   ├── load-env.sh      # читает config/*.env (в т.ч. опциональный disk.env); env побеждает config; ENV_VALUE/…
 │   │   └── common.sh        # логирование, dnf, git, distro-sync (общее для шагов)
 │   ├── 10-require-runtime.sh
 │   ├── 20-disk-storage.sh
@@ -215,9 +218,7 @@ sudo bash update.sh
 | `PUBLIC_REPO_URL`, `PUBLIC_REF`, `REPO_URL`, `REF` | `config/repos.env` |
 | `INFRA_SSH_*` | `config/ssh.env` |
 | `GALAXY_*`, `COLLECTIONS_REQ` | `config/galaxy.env` |
-| `DISK_*`, `MAIN_DISK_DEVICE`, `VAR_ALLOW_ROOT_DISK*` | `config/disk.env` |
-
-Обязательно выставьте **`DISK_VARS_REPO_PATH=config/disk.env`**, если профиль дисков лежит в приватном репозитории по этому пути.
+| `DISK_*`, `DISK_PROFILE_USE_MATRIX`, `MAIN_DISK_DEVICE`, `VAR_ALLOW_ROOT_DISK*` | опционально **`config/disk.env`** в клоне (из **`config/disk.env.example`**) или переменные окружения перед **`start.sh`** |
 
 ## Переменные окружения
 
@@ -231,7 +232,7 @@ sudo bash update.sh
 | [config/repos.env](config/repos.env) | `PUBLIC_REPO_URL`, `PUBLIC_REF`, `REPO_URL`, `REF` |
 | [config/ssh.env](config/ssh.env) | `INFRA_SSH_KEY`, `INFRA_SSH_KEY_COMMENT`, `INFRA_SSH_SKIP_PROMPT` |
 | [config/galaxy.env](config/galaxy.env) | `GALAXY_*`, опционально `COLLECTIONS_REQ` |
-| [config/disk.env](config/disk.env) | `DISK_VARS_FILE`, `DISK_VARS_REPO_PATH`, `DISK_PROFILE_FETCH_FROM_REPO`, `DISK_PROFILE_USE_MATRIX`, `MAIN_DISK_DEVICE`, параметры разметки |
+| [config/disk.env.example](config/disk.env.example) | Образец **`config/disk.env`** — переопределения матрицы **`config/disk-profiles.sh`** (файл **`disk.env`** в **`.gitignore`**, в git только образец) |
 
 Подробнее — [config/README.md](config/README.md).
 
@@ -250,15 +251,12 @@ sudo bash update.sh
 | `INFRA_SSH_KEY` | `/root/.ssh/id_ed25519_infra` | Ключ для `git@` / `ssh://`. |
 | `INFRA_SSH_KEY_COMMENT` | `infra@repo` | Комментарий к ключу. |
 | `INFRA_SSH_SKIP_PROMPT` | `0` | При `1` — не ждать Enter после показа публичного ключа. |
-| `DISK_VARS_FILE` | `/etc/infra/bootstrap-disk.env` | Локальный профиль дисков. |
-| `DISK_VARS_REPO_PATH` | `config/disk.env` | Путь к файлу профиля внутри приватного репозитория (должен совпадать с расположением в **infrastructure-private**). |
-| `DISK_PROFILE_FETCH_FROM_REPO` | `1` | Подтянуть профиль дисков из репо, если локального файла нет. |
-| `DISK_PROFILE_USE_MATRIX` | `1` | При `1` — перед файлом профиля подставляются **`ROOT_TARGET_G`**, **`VAR_SIZE_G`**, **`MINIO_SIZE_G`**, **`SWAP_SIZE_G`**, **`VAR_MIN_FREE_MIB`** из **`config/disk-profiles.sh`** по размеру диска. При `0` — только **`DISK_VARS_FILE`** и **`apply_disk_defaults`**. |
+| `DISK_PROFILE_USE_MATRIX` | `1` | При `1` в шаге **20** матрица **`config/disk-profiles.sh`** подставляет **`ROOT_TARGET_G`**, **`VAR_SIZE_G`**, **`MINIO_SIZE_G`**, **`SWAP_SIZE_G`**, **`VAR_MIN_FREE_MIB`** по размеру диска, не перезаписывая переменные, уже заданные в **`config/disk.env`** или в окружении. При `0` — только **`config/disk.env`** (если есть) и **`apply_disk_defaults`**. |
 | `MAIN_DISK_DEVICE` | *(пусто)* | Принудительно указать основной диск для расчёта профиля. |
 | `VAR_ALLOW_ROOT_DISK` | `1` | Разрешить разметку на диске с корнем (разделы в хвосте или LV в VG root). При фактическом использовании — предупреждение и ожидание Enter. `0` — не трогать root-диск. |
 | `VAR_ALLOW_ROOT_DISK_SKIP_PROMPT` | `0` | При `1` — не ждать Enter после предупреждения о разметке root-диска (автоматизация). |
 
-Дополнительно для разметки дисков (часто задаются в профиле на узле или в файле приватного репо по `DISK_VARS_REPO_PATH`): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — см. раздел **«Шаг 20 — disk-storage»** ниже.
+Дополнительно для разметки дисков (в **`config/disk.env`** в клоне или в окружении; см. **`config/disk.env.example`**): `ROOT_TARGET_G`, `VAR_MIN_FREE_MIB`, `VAR_SIZE_G`, `SWAP_SIZE_G`, `MINIO_SIZE_G`, `VAR_DISK_DEVICE`, `MIN_MINIO_G` — раздел **«Шаг 20 — disk-storage»** ниже.
 
 ## `scripts/lib/load-env.sh`
 
@@ -296,17 +294,16 @@ sudo bash update.sh
 Последовательно:
 
 1. **`resolve_main_disk` / `resolve_disk_size_group`** — определение основного диска и условной группы размера для профиля.
-2. **`load_disk_profile`** — подстановка **`ROOT_TARGET_G`**, **`VAR_SIZE_G`**, **`MINIO_SIZE_G`**, **`SWAP_SIZE_G`**, **`VAR_MIN_FREE_MIB`** по матрице **`config/disk-profiles.sh`** (если не отключено **`DISK_PROFILE_USE_MATRIX=0`**): для дисков **2–20 GiB** в профиле **1 GiB** под swap, под корень **`DISK_SIZE_G − 1`**; затем загрузка переопределений из **`DISK_VARS_FILE`**, если файл есть. Если локального файла нет и **`DISK_PROFILE_FETCH_FROM_REPO=1`**, shallow-клон для **`DISK_VARS_REPO_PATH`** выполняется **после** включения swap (функция **`fetch_disk_profile_from_repo_if_needed`**), чтобы не вызывать **`dnf`** до появления подкачки.
+2. **`load_disk_profile`** — подстановка по матрице **`config/disk-profiles.sh`** (если не отключено **`DISK_PROFILE_USE_MATRIX=0`**): для дисков **2–20 GiB** в профиле **1 GiB** под swap, под корень **`DISK_SIZE_G − 1`**; значения, уже заданные в **`config/disk.env`** (через **`load-env.sh`**) или в окружении, матрица не перезаписывает.
 3. **`apply_disk_defaults`** — значения по умолчанию для размеров и лимитов (то, что ещё не задано).
 4. **`ensure_swap`** — при необходимости создание файла подкачки `/swapfile`.
-5. Повторный **`apply_disk_defaults`** после подгрузки профиля из репозитория (если она была).
-6. **`expand_root_lv_if_needed`** — расширение root LV до **`ROOT_TARGET_G`** при LVM и наличии места в VG (growpart/pvresize при необходимости).
-7. **`prepare_var_and_minio`** — перенос `/var` на отдельный раздел или LV и при необходимости создание `/minio` (при необходимости ставится **`parted`** через **`dnf`** — уже после swap).
-8. **`expand_root_lv_consume_vg_free`** — если корень на LVM: **`lvextend -l +100%FREE`** для root LV и расширение ФС — весь **оставшийся** свободный объём в VG после шагов 6–7 добавляется к корню (отключить: **`ROOT_LV_FILL_VG_FREE=0`**).
+5. **`expand_root_lv_if_needed`** — расширение root LV до **`ROOT_TARGET_G`** при LVM и наличии места в VG (growpart/pvresize при необходимости).
+6. **`prepare_var_and_minio`** — перенос `/var` на отдельный раздел или LV и при необходимости создание `/minio` (при необходимости ставится **`parted`** через **`dnf`** — уже после swap).
+7. **`expand_root_lv_consume_vg_free`** — если корень на LVM: **`lvextend -l +100%FREE`** для root LV и расширение ФС — весь **оставшийся** свободный объём в VG после шагов 5–6 добавляется к корню (отключить: **`ROOT_LV_FILL_VG_FREE=0`**).
 
 Перед разметкой на диске с корнем при **`VAR_ALLOW_ROOT_DISK=1`** (значение по умолчанию) выводится предупреждение и ожидается Enter, если не задано **`VAR_ALLOW_ROOT_DISK_SKIP_PROMPT=1`** и stdin — TTY.
 
-Параметры (в т.ч. `VAR_SIZE_G`, `MINIO_SIZE_G`) задаются в профиле дисков или через переменные окружения — см. таблицу **«Переменные окружения»** выше.
+Параметры (в т.ч. `VAR_SIZE_G`, `MINIO_SIZE_G`) задаются в **`config/disk.env`**, матрице или через переменные окружения — см. таблицу **«Переменные окружения»** и раздел **«Переопределение матрицы дисков»** выше.
 
 Детали реализации — в `scripts/20-disk-storage.sh`.
 

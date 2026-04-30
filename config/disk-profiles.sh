@@ -19,9 +19,23 @@
 # 110–119      | 35            | 30         | 30           | 4           | 1024
 # 120 и выше   | 40            | 35         | 35           | 4           | 1024
 #
-# Отключить: DISK_PROFILE_USE_MATRIX=0 (остаются только узловой профиль и apply_disk_defaults).
+# Отключить: DISK_PROFILE_USE_MATRIX=0 (остаются только config/disk.env и apply_disk_defaults).
+#
+# Значения из матрицы не перезаписывают переменные, уже заданные в окружении (в т.ч. из
+# config/disk.env, подключённого в scripts/lib/load-env.sh до шага 20).
 #
 # После разметки по таблице (root до ROOT_TARGET_G, при необходимости LV /var и /minio) весь оставшийся свободный объём в VG добавляется к корню — expand_root_lv_consume_vg_free в scripts/20-disk-storage.sh.
+
+# Значение переменной профиля только если она ещё не задана (например, в config/disk.env).
+#
+# @param $1  имя переменной
+# @param $2  значение по матрице
+# @return 0
+_matrix_var_if_unset() {
+  local n="$1" v="$2"
+  [[ -n ${!n+x} ]] && return 0
+  printf -v "${n}" '%s' "${v}"
+}
 
 # Выставляет ROOT_TARGET_G, VAR_SIZE_G, MINIO_SIZE_G, SWAP_SIZE_G, VAR_MIN_FREE_MIB по DISK_SIZE_G.
 #
@@ -38,73 +52,73 @@ apply_disk_profile_matrix() {
 
   if (( g < 2 )); then
     log_warn "Диск <2 GiB по DISK_SIZE_G=${g}: минимальный профиль матрицы (корень без выделенного swap в профиле)."
-    ROOT_TARGET_G=1
-    VAR_SIZE_G=0
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=0
+    _matrix_var_if_unset ROOT_TARGET_G 1
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 0
   elif (( g >= 2 && g <= 19 )); then
-    SWAP_SIZE_G=1
-    ROOT_TARGET_G=$((g - 1))
-    VAR_SIZE_G=0
-    MINIO_SIZE_G=0
+    _matrix_var_if_unset SWAP_SIZE_G 1
+    _matrix_var_if_unset ROOT_TARGET_G $((g - 1))
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
   elif (( g <= 29 )); then
-    ROOT_TARGET_G=16
-    VAR_SIZE_G=0
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=1
+    _matrix_var_if_unset ROOT_TARGET_G 16
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 1
   elif (( g <= 39 )); then
-    ROOT_TARGET_G=20
-    VAR_SIZE_G=0
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=2
+    _matrix_var_if_unset ROOT_TARGET_G 20
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 2
   elif (( g <= 49 )); then
-    ROOT_TARGET_G=24
-    VAR_SIZE_G=8
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=2
+    _matrix_var_if_unset ROOT_TARGET_G 24
+    _matrix_var_if_unset VAR_SIZE_G 8
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 2
   elif (( g <= 59 )); then
-    ROOT_TARGET_G=26
-    VAR_SIZE_G=12
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=2
+    _matrix_var_if_unset ROOT_TARGET_G 26
+    _matrix_var_if_unset VAR_SIZE_G 12
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 2
   elif (( g <= 69 )); then
-    ROOT_TARGET_G=28
-    VAR_SIZE_G=15
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=2
+    _matrix_var_if_unset ROOT_TARGET_G 28
+    _matrix_var_if_unset VAR_SIZE_G 15
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 2
   elif (( g <= 79 )); then
-    ROOT_TARGET_G=30
-    VAR_SIZE_G=18
-    MINIO_SIZE_G=0
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset VAR_SIZE_G 18
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 89 )); then
-    ROOT_TARGET_G=30
-    VAR_SIZE_G=20
-    MINIO_SIZE_G=15
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset VAR_SIZE_G 20
+    _matrix_var_if_unset MINIO_SIZE_G 15
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 99 )); then
-    ROOT_TARGET_G=30
-    VAR_SIZE_G=24
-    MINIO_SIZE_G=20
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset VAR_SIZE_G 24
+    _matrix_var_if_unset MINIO_SIZE_G 20
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 109 )); then
-    ROOT_TARGET_G=32
-    VAR_SIZE_G=28
-    MINIO_SIZE_G=25
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 32
+    _matrix_var_if_unset VAR_SIZE_G 28
+    _matrix_var_if_unset MINIO_SIZE_G 25
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 119 )); then
-    ROOT_TARGET_G=35
-    VAR_SIZE_G=30
-    MINIO_SIZE_G=30
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 35
+    _matrix_var_if_unset VAR_SIZE_G 30
+    _matrix_var_if_unset MINIO_SIZE_G 30
+    _matrix_var_if_unset SWAP_SIZE_G 4
   else
-    ROOT_TARGET_G=40
-    VAR_SIZE_G=35
-    MINIO_SIZE_G=35
-    SWAP_SIZE_G=4
+    _matrix_var_if_unset ROOT_TARGET_G 40
+    _matrix_var_if_unset VAR_SIZE_G 35
+    _matrix_var_if_unset MINIO_SIZE_G 35
+    _matrix_var_if_unset SWAP_SIZE_G 4
   fi
 
-  VAR_MIN_FREE_MIB=1024
+  _matrix_var_if_unset VAR_MIN_FREE_MIB 1024
 
   log_info "Матрица профилей: диск ~${g}G → ROOT_TARGET_G=${ROOT_TARGET_G} VAR_SIZE_G=${VAR_SIZE_G} MINIO_SIZE_G=${MINIO_SIZE_G} SWAP_SIZE_G=${SWAP_SIZE_G} VAR_MIN_FREE_MIB=${VAR_MIN_FREE_MIB}"
 }

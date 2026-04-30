@@ -18,7 +18,7 @@
 2. `config/repos.env`
 3. `config/ssh.env`
 4. `config/galaxy.env`
-5. `config/disk.env`
+5. `config/disk.env` — **опционально**: скопируйте из `config/disk.env.example` в клоне, если нужны переопределения матрицы **`config/disk-profiles.sh`**. Файл в **`.gitignore`**, в общий репозиторий обычно не коммитится.
 
 Матрица профилей разметки по размеру диска для шага 20 задаётся в **`config/disk-profiles.sh`** (подключается из `scripts/20-disk-storage.sh`, не через `load-env.sh`).
 
