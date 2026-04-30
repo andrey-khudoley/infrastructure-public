@@ -7,7 +7,7 @@
 #   - scripts/lib/require-bootstrap-config.sh (если нужен require_bootstrap_config_files)
 #   - scripts/50-sync-repository.sh (для sync_repository)
 #
-# И чтобы были доступны ROOT, PUBLIC_REPO_URL, PUBLIC_REF_VALUE, PULL_DIR, REF_VALUE, ENV_VALUE.
+# И чтобы были доступны ROOT, PUBLIC_REPO_URL, PUBLIC_REF_VALUE, PULL_DIR, REF_VALUE.
 
 # Синхронизирует текущий клон infrastructure-public с PUBLIC_REPO_URL/PUBLIC_REF_VALUE.
 #
@@ -40,14 +40,14 @@ sync_public_repository() {
 
 # Печатает подсказку о следующем ручном шаге после update.
 #
-# @globals PUBLIC_REF_VALUE PULL_DIR REF_VALUE ENV_VALUE
+# @globals PUBLIC_REF_VALUE PULL_DIR REF_VALUE
 # @return 0
 print_next_steps_hint() {
   section "Готово"
   log_info "Публичный репозиторий: ${PUBLIC_REF_VALUE}. Приватный: ${PULL_DIR} (${REF_VALUE})."
   log_info "Чтобы применить изменения на узле, выполните вручную в корне клона приватного репо:"
   echo "    cd ${PULL_DIR}"
-  echo "    sudo make runtime ENV=${ENV_VALUE}"
+  echo "    sudo make runtime"
   echo
   log_info "Для повторного прогона bootstrap-фаз используйте make stage1 / make stage2 в том же каталоге."
 }

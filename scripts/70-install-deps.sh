@@ -7,7 +7,7 @@
 #   make -C "${PULL_DIR}" install-deps   # .venv (config/constraints.txt) + Galaxy-коллекции
 #
 # Запуск ansible-playbook (фазы stage1/stage2/runtime) — отдельный ручной шаг
-# пользователя через `make stage1 ENV=...` в корне клона. Никаких systemd
+# пользователя через `make stage1` в корне клона. Никаких systemd
 # юнитов и автоматических переходов между фазами bootstrap здесь не делает.
 #
 # Контракт с приватным репозиторием:
@@ -16,7 +16,7 @@
 #     устанавливает коллекции Galaxy.
 #
 # Окружение для make (экспорт перед вызовом):
-#   REPO_URL, REF, ENV, PULL_DIR — контекст узла (ветка/репо/каталог клона).
+#   REPO_URL, REF, PULL_DIR — контекст узла (ветка/репо/каталог клона).
 #   GALAXY_* и COLLECTIONS_REQ — параметры офлайн-установки коллекций Galaxy.
 #
 # Подшаг в subshell «( )»: изолировать cd в PULL_DIR и не менять cwd
@@ -25,7 +25,7 @@
 # Выполняет «make install-deps» в каталоге клона с экспортом контрактных
 # переменных окружения.
 #
-# @globals PULL_DIR REPO_URL REF_VALUE ENV_VALUE GALAXY_* COLLECTIONS_REQ
+# @globals PULL_DIR REPO_URL REF_VALUE GALAXY_* COLLECTIONS_REQ
 # @return код возврата make install-deps
 # @exit   через fail, если нет Makefile
 run_install_deps() {
@@ -36,7 +36,6 @@ run_install_deps() {
     cd "${PULL_DIR}"
     export REPO_URL="${REPO_URL}"
     export REF="${REF_VALUE}"
-    export ENV="${ENV_VALUE}"
     export PULL_DIR="${PULL_DIR}"
     export GALAXY_DOWNLOAD_DIR="${GALAXY_DOWNLOAD_DIR}"
     export GALAXY_INSTALL_TIMEOUT="${GALAXY_INSTALL_TIMEOUT}"

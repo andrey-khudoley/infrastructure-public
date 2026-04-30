@@ -55,11 +55,12 @@ verify_critical_services() {
   log_info "Критичные проверки пройдены."
 }
 
-# Вызывает «make update-sysuser» в каталоге клона (интерактивно: имя и пароль
-# администратора в vars/all.yml). Подсказка про stage1 выводится только после
-# этого шага.
+# Готовит config/ansible-vars.yml (копия из example, только если файла нет), затем
+# «make update-sysuser» в каталоге клона (интерактивно: имя и пароль в ansible-vars.yml).
+# Полный «make init» здесь не вызывается — иначе шаблоны перезапишут уже настроенный
+# repos.env после клона. Подсказка про stage1 напоминает выполнить «make init» вручную.
 #
-# @globals PULL_DIR REPO_URL REF_VALUE ENV_VALUE
+# @globals PULL_DIR REPO_URL REF_VALUE
 # @return код возврата make update-sysuser
 # @exit   через fail, если нет Makefile
 run_update_sysuser() {
@@ -70,15 +71,20 @@ run_update_sysuser() {
     cd "${PULL_DIR}"
     export REPO_URL="${REPO_URL}"
     export REF="${REF_VALUE}"
-    export ENV="${ENV_VALUE}"
     export PULL_DIR="${PULL_DIR}"
+    # Только ansible-vars.yml (не полный make init — иначе шаблоны перезапишут repos.env после клона)
+    if [[ ! -f config/ansible-vars.yml ]]; then
+      [[ -f config/ansible-vars.yml.example ]] || fail "Нет config/ansible-vars.yml.example в клоне."
+      cp -f config/ansible-vars.yml.example config/ansible-vars.yml
+      log_info "Создан config/ansible-vars.yml из ansible-vars.yml.example"
+    fi
     make update-sysuser
   )
 }
 
 # Печатает итоговую подсказку с командой запуска stage1 вручную.
 #
-# @globals PULL_DIR ENV_VALUE SKIP_ANSIBLE
+# @globals PULL_DIR SKIP_ANSIBLE
 # @return 0
 print_next_step_hint() {
   section "Следующий шаг — stage1 (вручную)"
@@ -87,12 +93,12 @@ print_next_step_hint() {
     echo "    cd ${PULL_DIR}"
     echo "    sudo make init"
     echo "    sudo make install-deps"
-    echo "    sudo make stage1 ENV=${ENV_VALUE}"
+    echo "    sudo make stage1"
   else
-    log_info "Подготовка завершена. Разверните config из шаблонов и запустите фазу stage1:"
+    log_info "Подготовка завершена. Выполнен update-sysuser (при необходимости создан config/ansible-vars.yml). Перед stage1 разверните остальной config:"
     echo "    cd ${PULL_DIR}"
     echo "    sudo make init"
-    echo "    sudo make stage1 ENV=${ENV_VALUE}"
+    echo "    sudo make stage1"
   fi
   echo
   log_info "Дальше stage1 сам подскажет команду для stage2 (и при необходимости перезагрузит сервер)."

@@ -44,8 +44,7 @@ for _f in host.env repos.env ssh.env galaxy.env disk.env; do
   _infra_load_env_file "${_REPO_ROOT}/config/${_f}"
 done
 
-# Нормализация для шагов: внешний интерфейс — ENV и REF, внутри скриптов — *_VALUE
-ENV_VALUE="${ENV:-ctl}"
+# Нормализация для шагов: внешний интерфейс — REF, внутри скриптов — *_VALUE
 REF_VALUE="${REF:-main}"
 PUBLIC_REF_VALUE="${PUBLIC_REF:-main}"
 
