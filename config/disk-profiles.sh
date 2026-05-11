@@ -6,18 +6,19 @@
 # Границы по целому DISK_SIZE_G (GiB), см. resolve_disk_size_group в 20-disk-storage.sh.
 #
 # Диапазон GiБ | ROOT_TARGET_G | VAR_SIZE_G | MINIO_SIZE_G | SWAP_SIZE_G | VAR_MIN_FREE_MIB
-# 2–19         | g−1           | 0          | 0            | 1           | 1024  (1 GiB под swap, остальное под корень)
-# 20–29        | 16            | 0          | 0            | 1           | 1024
-# 30–39        | 20            | 0          | 0            | 2           | 1024
-# 40–49        | 24            | 8          | 0            | 2           | 1024
-# 50–59        | 26            | 12         | 0            | 2           | 1024
-# 60–69        | 28            | 15         | 0            | 2           | 1024
-# 70–79        | 30            | 18         | 0            | 4           | 1024
-# 80–89        | 30            | 20         | 15           | 4           | 1024
-# 90–99        | 30            | 24         | 20           | 4           | 1024
-# 100–109      | 32            | 28         | 25           | 4           | 1024
-# 110–119      | 35            | 30         | 30           | 4           | 1024
-# 120 и выше   | 40            | 35         | 35           | 4           | 1024
+# 2            | 1             | 0          | 0            | 1           | 1024
+# 3–19         | g−2           | 0          | 0            | 2           | 1024
+# 20–29        | 15            | 0          | 0            | 2           | 1024
+# 30–39        | 18            | 0          | 0            | 4           | 1024
+# 40–49        | 22            | 8          | 0            | 4           | 1024
+# 50–59        | 24            | 12         | 0            | 4           | 1024
+# 60–69        | 26            | 15         | 0            | 4           | 1024
+# 70–79        | 26            | 18         | 0            | 8           | 1024
+# 80–89        | 26            | 20         | 15           | 8           | 1024
+# 90–99        | 26            | 24         | 20           | 8           | 1024
+# 100–109      | 28            | 28         | 25           | 8           | 1024
+# 110–119      | 31            | 30         | 30           | 8           | 1024
+# 120 и выше   | 36            | 35         | 35           | 8           | 1024
 #
 # Отключить: DISK_PROFILE_USE_MATRIX=0 (остаются только config/disk.env и apply_disk_defaults).
 #
@@ -56,66 +57,72 @@ apply_disk_profile_matrix() {
     _matrix_var_if_unset VAR_SIZE_G 0
     _matrix_var_if_unset MINIO_SIZE_G 0
     _matrix_var_if_unset SWAP_SIZE_G 0
-  elif (( g >= 2 && g <= 19 )); then
+  elif (( g == 2 )); then
+    # 2 GiB: удвоить swap нельзя без нулевого корня — оставляем 1/1.
     _matrix_var_if_unset SWAP_SIZE_G 1
-    _matrix_var_if_unset ROOT_TARGET_G $((g - 1))
+    _matrix_var_if_unset ROOT_TARGET_G 1
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
+  elif (( g >= 3 && g <= 19 )); then
+    _matrix_var_if_unset SWAP_SIZE_G 2
+    _matrix_var_if_unset ROOT_TARGET_G $((g - 2))
     _matrix_var_if_unset VAR_SIZE_G 0
     _matrix_var_if_unset MINIO_SIZE_G 0
   elif (( g <= 29 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 16
-    _matrix_var_if_unset VAR_SIZE_G 0
-    _matrix_var_if_unset MINIO_SIZE_G 0
-    _matrix_var_if_unset SWAP_SIZE_G 1
-  elif (( g <= 39 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 20
+    _matrix_var_if_unset ROOT_TARGET_G 15
     _matrix_var_if_unset VAR_SIZE_G 0
     _matrix_var_if_unset MINIO_SIZE_G 0
     _matrix_var_if_unset SWAP_SIZE_G 2
+  elif (( g <= 39 )); then
+    _matrix_var_if_unset ROOT_TARGET_G 18
+    _matrix_var_if_unset VAR_SIZE_G 0
+    _matrix_var_if_unset MINIO_SIZE_G 0
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 49 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 24
+    _matrix_var_if_unset ROOT_TARGET_G 22
     _matrix_var_if_unset VAR_SIZE_G 8
     _matrix_var_if_unset MINIO_SIZE_G 0
-    _matrix_var_if_unset SWAP_SIZE_G 2
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 59 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 26
+    _matrix_var_if_unset ROOT_TARGET_G 24
     _matrix_var_if_unset VAR_SIZE_G 12
     _matrix_var_if_unset MINIO_SIZE_G 0
-    _matrix_var_if_unset SWAP_SIZE_G 2
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 69 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 28
+    _matrix_var_if_unset ROOT_TARGET_G 26
     _matrix_var_if_unset VAR_SIZE_G 15
     _matrix_var_if_unset MINIO_SIZE_G 0
-    _matrix_var_if_unset SWAP_SIZE_G 2
+    _matrix_var_if_unset SWAP_SIZE_G 4
   elif (( g <= 79 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset ROOT_TARGET_G 26
     _matrix_var_if_unset VAR_SIZE_G 18
     _matrix_var_if_unset MINIO_SIZE_G 0
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   elif (( g <= 89 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset ROOT_TARGET_G 26
     _matrix_var_if_unset VAR_SIZE_G 20
     _matrix_var_if_unset MINIO_SIZE_G 15
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   elif (( g <= 99 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 30
+    _matrix_var_if_unset ROOT_TARGET_G 26
     _matrix_var_if_unset VAR_SIZE_G 24
     _matrix_var_if_unset MINIO_SIZE_G 20
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   elif (( g <= 109 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 32
+    _matrix_var_if_unset ROOT_TARGET_G 28
     _matrix_var_if_unset VAR_SIZE_G 28
     _matrix_var_if_unset MINIO_SIZE_G 25
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   elif (( g <= 119 )); then
-    _matrix_var_if_unset ROOT_TARGET_G 35
+    _matrix_var_if_unset ROOT_TARGET_G 31
     _matrix_var_if_unset VAR_SIZE_G 30
     _matrix_var_if_unset MINIO_SIZE_G 30
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   else
-    _matrix_var_if_unset ROOT_TARGET_G 40
+    _matrix_var_if_unset ROOT_TARGET_G 36
     _matrix_var_if_unset VAR_SIZE_G 35
     _matrix_var_if_unset MINIO_SIZE_G 35
-    _matrix_var_if_unset SWAP_SIZE_G 4
+    _matrix_var_if_unset SWAP_SIZE_G 8
   fi
 
   _matrix_var_if_unset VAR_MIN_FREE_MIB 1024

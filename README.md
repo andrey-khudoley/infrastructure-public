@@ -310,7 +310,7 @@ sudo env REF=main make git-private  # только private sync
 Последовательно:
 
 1. **`resolve_main_disk` / `resolve_disk_size_group`** — определение основного диска и условной группы размера для профиля.
-2. **`load_disk_profile`** — подстановка по матрице **`config/disk-profiles.sh`** (если не отключено **`DISK_PROFILE_USE_MATRIX=0`**): для дисков **2–20 GiB** в профиле **1 GiB** под swap, под корень **`DISK_SIZE_G − 1`**; значения, уже заданные в **`config/disk.env`** (через **`load-env.sh`**) или в окружении, матрица не перезаписывает.
+2. **`load_disk_profile`** — подстановка по матрице **`config/disk-profiles.sh`** (если не отключено **`DISK_PROFILE_USE_MATRIX=0`**): для диска **2 GiB** — **1 GiB** swap и **1 GiB** под корень; для **3–19 GiB** — **2 GiB** swap и корень **`DISK_SIZE_G − 2`**; для больших дисков см. таблицу в **`config/disk-profiles.sh`**. Значения, уже заданные в **`config/disk.env`** (через **`load-env.sh`**) или в окружении, матрица не перезаписывает.
 3. **`apply_disk_defaults`** — значения по умолчанию для размеров и лимитов (то, что ещё не задано).
 4. **`ensure_swap`** — при необходимости создание файла подкачки `/swapfile`.
 5. **`expand_root_lv_if_needed`** — расширение root LV до **`ROOT_TARGET_G`** при LVM и наличии места в VG (growpart/pvresize при необходимости).
